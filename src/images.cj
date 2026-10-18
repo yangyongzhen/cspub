@@ -6,6 +6,7 @@ package cspub
 
 import std.collection.*
 import std.convert.*
+import std.fs.*
 import stdx.encoding.json.*
 import stdx.net.http.*
 import stdx.net.tls.*
@@ -436,6 +437,9 @@ public func uploadImage(cookie: String, img: Array<Byte>, ext: String, insecure:
     if (status != 200) {
         throw PubError("图床签名 HTTP ${status}：${truncateUtf8(text, 200)}")
     }
+    if (text.size == 0) {
+        throw PubError("图床签名响应为空（HTTP 200 但 0 字节，多半被网关/WAF 吞了）")
+    }
     let root = JsonValue.fromStr(text)
     var imageUrl = ""
     if (let Some(d) <- jsonObjField(root, "data")) {
@@ -506,6 +510,9 @@ public func uploadImage(cookie: String, img: Array<Byte>, ext: String, insecure:
             if (ost != 200) {
                 throw PubError("图床上传 HTTP ${ost}：${truncateUtf8(otext, 200)}")
             }
+            if (otext.size == 0) {
+                throw PubError("图床上传响应为空（HTTP 200 但 0 字节）")
+            }
             // ③ 回调响应：{"code":200,"data":{"imageUrl":"..."}}
             let oroot = JsonValue.fromStr(otext)
             var ocode: Int64 = -1
@@ -546,6 +553,21 @@ public func rehostImages(cookie: String, md: String, insecure: Bool): String {
             continue
         }
         if (!m.url.startsWith("http://") && !m.url.startsWith("https://")) {
+            // 本地绝对路径：由外部先落盘（如 curl 下载——stdx TLS 栈与部分站点握手不兼容时的
+            // 兜底通路），这里直接读文件走同一条图床链路。其余（data: 等）原样保留。
+            if (m.url.startsWith("/")) {
+                try {
+                    let img = File.readFrom(m.url)
+                    let newUrl = uploadImage(cookie, img, extOf(m.url), insecure)
+                    result = result[0..m.urlStart] + newUrl + result[m.urlEnd..result.size]
+                    done++
+                    println("图片转存(本地) ${done}: ${m.url} -> ${newUrl}")
+                } catch (e: Exception) {
+                    failed++
+                    println("⚠ 本地图片转存失败：${m.url} — ${e.message}")
+                }
+                continue
+            }
             skipped++  // data: 等原样保留
             continue
         }
