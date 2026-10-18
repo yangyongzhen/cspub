@@ -20,6 +20,7 @@
 package cspub
 
 import std.env.*
+import stdx.encoding.hex.*
 import stdx.encoding.json.*
 
 main(args: Array<String>): Int64 {
@@ -88,6 +89,13 @@ main(args: Array<String>): Int64 {
             println("预检失败：${e.message}")
             return 1
         }
+    }
+    if (cmd == "mp") {
+        // 调试入口：按固定输入打印 multipart 表单体 hex（确定性），与参考实现逐字节对账用
+        let fields = [StrKV("key", "abc/def.png"), StrKV("policy", "pol==")]
+        let body = buildMultipart("----cspubTEST", fields, "file", "image.png", "image/png", [UInt8(0x89), UInt8(0x50), UInt8(0x4E), UInt8(0x47)])
+        println(toHexString(body))
+        return 0
     }
     if (cmd == "sig" && args.size >= 2) {
         // 调试入口：按给定 nonce 打印签名（确定性），与参考实现逐字节对账用
