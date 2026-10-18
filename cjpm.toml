@@ -1,0 +1,15 @@
+[package]
+  cjc-version = "1.0.5"
+  name = "cspub"
+  description = "CSDN 自动发文 CLI（仓颉实现）：Markdown + front-matter 一条命令发草稿/发布"
+  version = "0.1.0"
+  output-type = "executable"
+  compile-option = ""
+  link-option = ""
+
+[dependencies]
+
+[package.cj-package-override]
+
+[target.x86_64-unknown-linux-gnu.bin-dependencies]
+    path-option = ["${CANGJIE_STDX}"]
