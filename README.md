@@ -67,6 +67,9 @@ cspub whoami                       校验 Cookie 配置
 cspub help
 ```
 
+环境变量 `CSPUB_DEBUG=1`：往 stderr 打图床/发文链路的诊断行（请求体积、OBS 状态码与响应首段），
+排查上传异常时用；正常使用无需设置。
+
 ## 图片转存（publish 自动做）
 
 CSDN 对站外图有防盗链（典型形状：`<img>` 直连返回 **HTTP 200 + 0 字节**）。`publish` 在发文前**自动**把
@@ -79,6 +82,13 @@ CSDN 对站外图有防盗链（典型形状：`<img>` 直连返回 **HTTP 200 +
 5. 从后往前回写 Markdown（偏移不挪位）；**best-effort**：单张失败保留原链接并提示，不阻断发文。
 
 发文前可先 `cspub imgs <文章.md>` 预演：只扫描不联网，列出每张图会被如何处理（rehost / skip / BLOCKED）。
+
+**已验证（2026-10-21）**：一篇带 2 张 `raw.githubusercontent.com` 外链图的真实文章，转存 2/2 成功，
+回写后的链接形如 `https://i-blog.csdnimg.cn/direct/<hash>.png`，发文后正文图片正常显示。
+
+**这条链路的坑（值得记一笔）**：图床签名响应里 `customParam.isAudit` 是 **JSON 数字**，用只认字符串的
+`jsonStr` 去取会得空串；把空的 `x:isAudit` 发给华为 OBS，OBS 回的是 **HTTP 200 + 0 字节**——看起来像
+"被网关吞了"，实际是回调拿不到字段。改法是 `jsonScalar`：按 JsonKind 分别取字符串/数字/布尔字面量。
 
 ## front-matter
 
@@ -102,15 +112,18 @@ draft: true                # 缺省 true；publish 时 --live 可覆盖
 - **HMAC 对账**：签名实现用 Python `hmac+sha256` 逐字节对过账；nonce 用随机 16 字节 hex（`std.random.nextBytes`）。
 - **UTF-8 安全**：摘要截断按首字节判界（`(b & 0xC0) != 0x80`），不在汉字中间切开；行内渲染按区间整体转码，
   不逐字节 append（逐字节会把汉字拆成非法序列）。
-- **图片没有转存**：正文里的外链图片直接引用原 URL——CSDN 展示外链图可能被防盗链拦（典型形状是 200 + 0 字节），
-  要稳妥就先把图传到 CSDN 图床（本工具未实现转存，诚实说明）。
-  **（2026-10-18 已实现：publish 自动转存，见「图片转存」一节；上传链路的端到端验证与发文同缺 Cookie，待补。）**
+- **外链图必须先转存**：CSDN 对站外图有防盗链（典型形状 200 + 0 字节）；`publish` 已内置自动转存
+  （见「图片转存」一节），2026-10-21 用真实文章端到端验证通过。
 - **Cookie 会过期**：401/403 时工具会提示重取；WAF 若拦截（403 + HTML），换网络/重新过验证码再试。
 - **TLS 信任的已知问题**：CSDN 的证书链根是 Certum（小众 CA），实测本机 stdx TLS（1.0.5.1 与 1.2.0.1
   两代）默认模式与 CustomCA 模式（内嵌逐字节一致的 Certum 根）都报 unknown CA，而系统 curl 验同一条链
   通过——疑 stdx 动态加载的 OpenSSL 验证行为问题（已记录待查）。`--insecure`（TrustAll）是逃生口：
   探针已用它验证签名/请求形状可过网关（401 = 只缺登录 Cookie）。正式发文先试默认模式，失败再加
   `--insecure`（HTTPS 内容仍加密，只是不验服务器身份，风险自担）。
+- **stdx 1.2.0 的编译差异**：`CertificateVerifyMode` 已移到 `stdx.net.tls.common` 子包，需显式
+  `import stdx.net.tls.common.*`、变体写限定名（`CertificateVerifyMode.TrustAll` / `CertificateVerifyMode.CustomCA`）；
+  且 `CustomCA` 收的是 `Array<Certificate>`（接口），而 `X509Certificate.decodeFromPem` 返回
+  `Array<X509Certificate>`（类）——Array 不协变，得显式搬一次。源码以 1.2.0 为准，1.0.5.1 下这几处编译不过。
 
 ## 已知限制
 
@@ -118,5 +131,7 @@ draft: true                # 缺省 true；publish 时 --live 可覆盖
 - 更新文章只支持 `--update <id>`（id 在首次发布成功后回显）；
 - 未做多平台（掘金/博客园接口形状不同，要了再加）；
 - **Windows 侧未实测**（stdx http 在 Linux 验证；理论上可交叉编译）；
-- 上传/发文链路的**端到端验证与真发一篇草稿待补**（工具侧无凭据预检已全过：两个 bizapi 端点的
-  签名都能过网关校验，收到业务级 401 = 只缺登录 Cookie）。
+- **CSDN 每日发文限额**：实测该账号每天只能发 1 篇，额度用满时 `saveArticle` 直接回
+  `{"code":400300012,"msg":"今天发表文章数量已达到限制的1篇。"}`；存草稿（`status=2` / `pubStatus=draft`）
+  同样被拒（错误码 400300001）——这不是工具问题，换自然日或换账号即可；
+- 上传/发文链路已端到端跑通（2026-10-21）：图片转存 2/2、发文成功回显 article id、`--update <id>` 原地更新可用。

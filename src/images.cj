@@ -6,10 +6,20 @@ package cspub
 
 import std.collection.*
 import std.convert.*
+import std.env.*
 import std.fs.*
 import stdx.encoding.json.*
 import stdx.net.http.*
 import stdx.net.tls.*
+import stdx.net.tls.common.*
+
+/** CSPUB_DEBUG 置位时打诊断行（排查图床/发文链路用，不影响正常输出） */
+public func dbg(msg: String): Unit {
+    match (getVariable("CSPUB_DEBUG")) {
+        case Some(_) => eprintln("[dbg] " + msg)
+        case None => ()
+    }
+}
 
 public const OBS_MAX_IMG_BYTES: Int64 = 12 * 1024 * 1024
 
@@ -384,6 +394,30 @@ func jsonInt(v: JsonValue, key: String): Option<Int64> {
     return Option<Int64>.None
 }
 
+/** 取字段的「标量文本」：字符串原样返回，数字/布尔转字面量。
+ * 图床签名响应的 customParam 里 isAudit 是数字 1，用 jsonStr 取会得空串，
+ * 空串当 x:isAudit 发给 OBS，OBS 就回 HTTP 200 + 0 字节（实测对照过），图也就传不上去。 */
+func jsonScalar(v: JsonValue, key: String): String {
+    if (let Some(x) <- jsonObjField(v, key)) {
+        match (x.kind()) {
+            case JsonKind.JsString =>
+                return x.asString().getValue()
+            case JsonKind.JsInt =>
+                return x.asInt().getValue().toString()
+            case JsonKind.JsFloat =>
+                return x.asFloat().getValue().toString()
+            case JsonKind.JsBool =>
+                if (x.asBool().getValue()) {
+                    return "1"
+                }
+                return "0"
+            case _ =>
+                return ""
+        }
+    }
+    return ""
+}
+
 /** 上传单张图到 CSDN 图床，返回 csdnimg.cn URL */
 public func uploadImage(cookie: String, img: Array<Byte>, ext: String, insecure: Bool): String {
     // ① 签名接口：bizapi（网关 x-ca 签名 + Cookie）
@@ -417,7 +451,7 @@ public func uploadImage(cookie: String, img: Array<Byte>, ext: String, insecure:
     }
     var cfg = TlsClientConfig()
     if (insecure) {
-        cfg.verifyMode = TrustAll
+        cfg.verifyMode = CertificateVerifyMode.TrustAll
     }
     let client = ClientBuilder()
         .tlsConfig(cfg)
@@ -459,13 +493,13 @@ public func uploadImage(cookie: String, img: Array<Byte>, ext: String, insecure:
         var cpSuffix = ""
         var cpUser = ""
         if (let Some(c) <- jsonObjField(d, "customParam")) {
-            cpRtype = jsonStr(c, "rtype")
-            cpFilePath = jsonStr(c, "filePath")
-            cpIsAudit = jsonStr(c, "isAudit")
-            cpApp = jsonStr(c, "x-image-app")
-            cpType = jsonStr(c, "type")
-            cpSuffix = jsonStr(c, "x-image-suffix")
-            cpUser = jsonStr(c, "username")
+            cpRtype = jsonScalar(c, "rtype")
+            cpFilePath = jsonScalar(c, "filePath")
+            cpIsAudit = jsonScalar(c, "isAudit")
+            cpApp = jsonScalar(c, "x-image-app")
+            cpType = jsonScalar(c, "type")
+            cpSuffix = jsonScalar(c, "x-image-suffix")
+            cpUser = jsonScalar(c, "username")
         }
         if (host.size == 0 || policy.size == 0 || filePath.size == 0) {
             throw PubError("图床签名响应缺字段：${truncateUtf8(text, 200)}")
@@ -489,6 +523,9 @@ public func uploadImage(cookie: String, img: Array<Byte>, ext: String, insecure:
             StrKV("x:username", cpUser)
         ]
         let body = buildMultipart(boundary, fields, "file", "image.${ext}", "image/${ext}", img)
+        dbg("obs host=${host} body=${body.size}B img=${img.size}B boundary=${boundary}")
+        dbg("obs callbackUrl=${callbackUrl} callbackBodyType=${callbackBodyType} accessId=${accessId}")
+        dbg("obs callbackBody=${truncateUtf8(callbackBody, 200)}")
         var ocb = ClientBuilder()
             .readTimeout(Duration.second * 60)
             .writeTimeout(Duration.second * 60)
@@ -507,6 +544,7 @@ public func uploadImage(cookie: String, img: Array<Byte>, ext: String, insecure:
             let ost = Int64(resp.status)
             let otext = readRespText(resp)
             resp.close()
+            dbg("obs status=${ost} respLen=${otext.size} respHead=${truncateUtf8(otext, 300)}")
             if (ost != 200) {
                 throw PubError("图床上传 HTTP ${ost}：${truncateUtf8(otext, 200)}")
             }

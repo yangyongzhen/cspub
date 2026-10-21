@@ -3,12 +3,14 @@ package cspub
 
 import stdx.crypto.digest.*
 import stdx.crypto.x509.*
+import stdx.crypto.common.*
 import stdx.encoding.base64.*
 import std.collection.*
 import std.convert.*
 import stdx.encoding.json.*
 import stdx.net.http.*
 import stdx.net.tls.*
+import stdx.net.tls.common.*
 
 /**
  * CSDN 链的根是 Certum（小众 CA）：stdx 的默认信任集（Default 模式走 systemRootCerts 的
@@ -148,10 +150,18 @@ public func publishToCsdn(cookie: String, a: Article, updateId: String, publishN
     // --insecure 走 TrustAll（跳过校验，自担风险）。
     var cfg = TlsClientConfig()
     if (insecure) {
-        cfg.verifyMode = TrustAll
+        cfg.verifyMode = CertificateVerifyMode.TrustAll
     } else {
-        let roots = X509Certificate.decodeFromPem(CERTUM_ROOT_PEM)
-        cfg.verifyMode = CustomCA(roots)
+        // stdx 1.2.0：CustomCA 收 Array<Certificate>（接口），而 X509Certificate.decodeFromPem
+        // 返回 Array<X509Certificate>（类）；Array 不协变，显式搬一次。
+        let x509s = X509Certificate.decodeFromPem(CERTUM_ROOT_PEM)
+        let roots = Array<Certificate>(x509s.size, repeat: x509s[0])
+        var ri = 0
+        while (ri < x509s.size) {
+            roots[ri] = x509s[ri]
+            ri += 1
+        }
+        cfg.verifyMode = CertificateVerifyMode.CustomCA(roots)
     }
     let client = ClientBuilder()
         .tlsConfig(cfg)
