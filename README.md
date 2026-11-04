@@ -2,9 +2,9 @@
 
 # cspub
 
-**CSDN 自动发文 CLI —— 用华为仓颉语言实现**
+**多平台文章发布助手 —— 用华为仓颉语言实现**
 
-一份 Markdown（带 front-matter），一条命令发成 CSDN 文章：自动签名、自动把外链图转存到 CSDN 图床、默认发草稿。
+一份 Markdown（带 front-matter），一条命令发到多个平台：CSDN / 知乎 / 百家号，自动签名/登录、自动转存图片、默认发草稿。
 
 [![Language](https://img.shields.io/badge/%E8%AF%AD%E8%A8%80-%E4%BB%93%E9%A2%89%201.0.5%2B-ff69b4)](https://cangjie-lang.cn)
 [![License](https://img.shields.io/badge/%E8%AE%B8%E5%8F%AF%E8%AF%81-MIT-green)](./LICENSE)
@@ -13,21 +13,22 @@
 </div>
 
 ```bash
-cspub publish 我的文章.md --platform csdn       # 默认发草稿（宁可草稿也不误发布）
-cspub publish 我的文章.md --platform zhihu      # 知乎专栏（Cookie 登录态）
-cspub publish 我的文章.md --platform baijiahao  # 百家号（后台开发者凭证）
+cspub publish 我的文章.md --platform csdn       # CSDN（Cookie + 网关签名，默认发草稿）
+cspub publish 我的文章.md --platform zhihu      # 知乎专栏（Cookie 登录态，图片自动转存知乎 CDN）
+cspub publish 我的文章.md --platform baijiahao  # 百家号（Cookie 浏览器通道 / 开发者凭证）
+cspub publish 我的文章.md --platform cnblogs    # 博客园（官方 MetaWeblog API，纯 HTTP）
 cspub publish 我的文章.md --live                # 直接发布
 ```
 
 ## 它做什么
 
-1. 读 Markdown + front-matter（title / tags / categories / desc / draft）；
-2. **自动转存外链图**到 CSDN 图床（CSDN 对站外图有防盗链，外链图直接发会显示不出来）；
-3. 把 Markdown 渲染成 HTML（CSDN 编辑器要求发渲染后的 HTML，不是 Markdown 源文）；
-4. 按 CSDN 编辑器前端的同款算法做网关 HMAC-SHA256 签名（`x-ca-*`），带着你的登录 Cookie 发到 `bizapi.csdn.net`；
-5. 回显文章链接与 id（更新用 `--update <id>`）。
+1. 读 Markdown + front-matter（title / tags / categories / desc / draft / origin_url）；
+2. **按平台自动转存图片**：CSDN 外链图转 CSDN 图床（防盗链），知乎图转知乎 CDN（知乎剥离站外图）；
+3. 把 Markdown 渲染成 HTML（各平台编辑器都要求发渲染后的 HTML，不是 Markdown 源文）；
+4. 按平台鉴权发文：CSDN 走网关 HMAC-SHA256 签名（`x-ca-*`）+ Cookie；知乎走 Cookie 草稿接口三步流；百家号走 Cookie 浏览器自动化（Playwright 伴生脚本）或官方开发者凭证；
+5. 回显文章链接与 id（CSDN 支持更新用 `--update <id>`）。
 
-全部用仓颉标准库 + stdx 实现（HMAC / Base64 / HTTP / JSON），零第三方依赖。
+主链路全部用仓颉标准库 + stdx 实现（HMAC / Base64 / HTTP / JSON），零第三方依赖；仅百家号 Cookie 通道需要一个 Playwright 伴生脚本。
 
 ## 发文数据流
 
@@ -64,6 +65,7 @@ cjpm build
 | csdn | `CSPUB_CSDN_COOKIE` | `csdnCookie` | 浏览器登录 → F12 → 复制 Cookie 整串 |
 | zhihu | `CSPUB_ZHIHU_COOKIE` | `zhihuCookie` | 登录 zhuanlan.zhihu.com → F12 → 复制 Cookie 整串（须含 `z_c0`） |
 | baijiahao | `CSPUB_BAIJIAHAO_COOKIE`（通用）或 `CSPUB_BAIJIAHAO_APP_ID` / `CSPUB_BAIJIAHAO_APP_TOKEN` | `baijiahaoCookie` 或 `baijiahaoAppId` / `baijiahaoAppToken` | ①Cookie：登录 baijiahao.baidu.com → F12 → 复制整串（须含 `BDUSS`）②开发者：后台「开发 → 基本配置」（现为定向邀请制，有入口才可用） |
+| cnblogs | `CSPUB_CNBLOGS_BLOG_ID` / `CSPUB_CNBLOGS_USERNAME` / `CSPUB_CNBLOGS_TOKEN` | `cnblogsBlogId` / `cnblogsUsername` / `cnblogsToken` | 后台设置 → 开启「允许博客客户端访问」→ 复制 MetaWeblog 访问地址尾巴（博客名）、登录名与访问令牌（**非登录密码**） |
 
 配置文件：`~/.cspub/config.json`（`chmod 600`），例：
 `{"csdnCookie": "...", "zhihuCookie": "...", "baijiahaoCookie": "..."}`

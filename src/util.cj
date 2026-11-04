@@ -4,8 +4,12 @@ package cspub
 import std.collection.*
 import std.fs.*
 import std.random.*
+import stdx.crypto.common.*
+import stdx.crypto.x509.*
 import stdx.encoding.hex.*
 import stdx.net.http.*
+import stdx.net.tls.*
+import stdx.net.tls.common.*
 
 /** 业务级失败（带可读信息，rehost 的 best-effort 链路靠它传递原因） */
 public class PubError <: Exception {
@@ -147,4 +151,57 @@ public func stripMarkdown(md: String): String {
         out.append(" ")
     }
     return trimAscii(out.toString())
+}
+
+// ── 多平台共用 HTTP 执行 ──
+
+/** 一次 HTTP 请求的结果：状态码 + 响应体文本 */
+public class HttpResp {
+    public var status: Int64
+    public var text: String
+    public init(status: Int64, text: String) {
+        this.status = status
+        this.text = text
+    }
+}
+
+/** 批量设置请求头（builder.header 链式，逐个赋回） */
+public func applyHeaders(builder: HttpRequestBuilder, headers: Array<StrKV>): HttpRequestBuilder {
+    var b = builder
+    for (h in headers) {
+        b = b.header(h.k, h.v)
+    }
+    return b
+}
+
+/** 发请求并读回状态码与响应体。TLS 默认 CustomCA（系统根集 + 追加 Certum 根，
+ * 与 csdn.cj 同一套，各平台链都能验）；insecure = TrustAll（诊断/自担风险）。 */
+public func execRequest(req: HttpRequest, insecure: Bool): HttpResp {
+    var cfg = TlsClientConfig()
+    if (insecure) {
+        cfg.verifyMode = CertificateVerifyMode.TrustAll
+    } else {
+        let x509s = X509Certificate.decodeFromPem(CERTUM_ROOT_PEM)
+        let roots = Array<Certificate>(x509s.size, repeat: x509s[0])
+        var ri = 0
+        while (ri < x509s.size) {
+            roots[ri] = x509s[ri]
+            ri += 1
+        }
+        cfg.verifyMode = CertificateVerifyMode.CustomCA(roots)
+    }
+    let client = ClientBuilder()
+        .tlsConfig(cfg)
+        .readTimeout(Duration.second * 30)
+        .writeTimeout(Duration.second * 30)
+        .build()
+    try {
+        let resp = client.send(req)
+        let text = readRespText(resp)
+        let status = Int64(resp.status)
+        resp.close()
+        return HttpResp(status, text)
+    } finally {
+        client.close()
+    }
 }

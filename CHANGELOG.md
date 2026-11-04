@@ -2,6 +2,54 @@
 
 cspub 版本变更记录。版本号规则沿用 cjh：重大更新递增中间位，小更新递增末位；版本号单一真相在 `cjpm.toml` 的 `version` 字段。每条变更须带验证证据（实测输出、错误码、转存结果），不写没有证据的条目。
 
+## [v0.2.1] - 2026-11-04
+
+新增博客园平台（官方 MetaWeblog API，纯 HTTP 零浏览器）；README 更名为「多平台文章发布助手」。
+
+### 新增
+
+- **`publish --platform cnblogs`**：走博客园官方 MetaWeblog API（XML-RPC，`metaWeblog.newPost`），纯仓颉实现零浏览器。端点 `https://rpc.cnblogs.com/metaweblog/<博客名>`；鉴权用后台「设置 → 允许博客客户端访问」开启后显示的 MetaWeblog 登录名 + 访问令牌（**不是登录密码**）。正文传 Markdown 原文，`categories` 自动带上 `[Markdown]`（缺失时博客园不按 MD 渲染，社区实测坑）；front-matter 的 `categories` 拆分为随笔分类、`tags` 进 `mt_keywords`、`desc` 进摘要。默认草稿（`publish=false`），`--live` 公开发布，回显 postid 与文章链接。配置：`CSPUB_CNBLOGS_BLOG_ID/USERNAME/TOKEN` 或 config.json 的 `cnblogsBlogId/Username/Token`。代码：`src/cnblogs.cj`。
+- **`whoami cnblogs`**：校验 blogId/username/token 三项配置。
+- **单元测试新增 4 例**（总 16 例全过，`cjpm test`）：XML 转义、XML-RPC dateTime 格式、newPost 请求体对账（含转义/[Markdown]/publish 布尔）、响应 postid 与 fault 解析（含非 XML 兜底）。
+
+### 变更
+
+- **README 定位更新**：标题从「CSDN 自动发文 CLI」改为「多平台文章发布助手」，`cjpm.toml` 描述同步。
+
+### 修复
+
+- **`xmlEscape` 逐字节转码把多字节字符拆成非法 UTF-8**（踩坑记录 2 同款新犯）：改为 `s.runes()` 按 Rune 迭代，中文标题/正文转义不再抛 `IllegalArgumentException: Invalid utf8 byte sequence`。单测 `xmlEscapeTest` 覆盖。
+
+### 构建
+
+- `cjpm build` 零警告；`cjpm test` 16/16 通过（2026-11-04）。端到端真机验证待用户博客园凭证后补跑。
+
+## [v0.2.0] - 2026-11-04
+
+多平台自助发文：新增知乎（Cookie）与百度百家号（开发者凭证）两个平台，`--platform` 分发。
+
+### 新增
+
+- **`publish --platform zhihu`**：知乎无官方发文 API，走 Cookie 模拟 Web 接口三步——①POST `zhuanlan.zhihu.com/api/articles/drafts` 建空草稿 → ②PATCH `/api/articles/{id}/draft` 写标题与渲染后 HTML → ③PUT `/api/articles/{id}/publish` 发布（草稿模式止步②）。鉴权用浏览器登录态 Cookie 整串（须含 `z_c0`），`XSRF-TOKEN` 作 `x-xsrftoken` 头回传。配置：`CSPUB_ZHIHU_COOKIE` 或 `~/.cspub/config.json` 的 `zhihuCookie`。代码：`src/zhihu.cj`。**真机验证（2026-11-04，Cookie 整串无 XSRF-TOKEN 也能通过）**：冒烟文章草稿模式回显 draft id `2101309061220382671`；`--live` 发布回显 `https://zhuanlan.zhihu.com/p/2101309149501976785`（用户确认可见）；正式文章（25KB 鸿蒙移植对比文，含表格/引用/链接）直发成功回显 `https://zhuanlan.zhihu.com/p/2101309879893939156`，`GET zhuanlan.zhihu.com/api/articles/{id}` 取证 `type: article` 且标题/摘要完整。
+- **知乎图片自动转存**：知乎保存时剥离非 zhimg.com 图源，`publish --platform zhihu` 发文前自动转存——外链图走 `POST zhuanlan.zhihu.com/api/uploaded_images {url, source:"article"}`（知乎服务端抓取，acedatacloud/skills 生产配方）；本地图走 `POST api.zhihu.com/images {image_hash, source}` 二进制通道（MD5 去重命中直接查 hash，未命中拿 OSS STS token 做 HMAC-SHA1 签名 PUT），draft 临时 URL 归约为 `picx/pic4.zhimg.com/{hash}.{ext}` 长期链接；best-effort，单张失败保留原链接并提示。**踩坑**：响应里的 `access_timestamp` 比 UTC 快 1 小时，直接当 `x-oss-date` 用必 403 `RequestTimeTooSkewed`（MaxAllowedSkew 900s），须用本机当前 UTC 时间（`DateTime.now(timeZone: TimeZone.UTC)`）。**真机验证**：带 2 张本地图的 cjh 文章直发成功 `https://zhuanlan.zhihu.com/p/2101315456896340220`，API 取证正文内图片均为 `zhimg.com` CDN 链接（转存 2/2 成功，含 OSS 签名 PUT 与去重两条路径）。
+- **`publish --platform baijiahao`（双通道）**：①官方开发者接口 `builderinner/open/resource/article/publish`（后台「开发 → 基本配置」的 `app_id`+`app_token`；现为**定向邀请制**，有入口才可用）——`origin_url` 按官方必填校验（front-matter 加 `origin_url:`），publish 模式自动取正文第一张图作 `cover_images`（内嵌 JSON 字符串，官方要求），无封面按官方规则落草稿；②**Cookie 浏览器自动化通道**（通用兜底）——纯 Cookie 直调发布接口不可行（React 发布按钮需 `preCheck→paramProxy` 完整事件链，直调 `/rest/2.0/elite/article/publish` 缺 CSRF 必 500，社区可用实现全走浏览器自动化），故 `--platform baijiahao` 在无开发者凭证时自动调起伴生脚本 `scripts/baijiahao_publish.py`（Playwright：Cookie 注入 → 打开编辑页 → 关新手引导与 AI 推广弹窗 → 填标题 → 填正文 → publish 模式经「选择封面」对话框上传本地图 → 点「存草稿/发布」），凭证经临时文件传递用完即删，宿主机需 python3+playwright+chromium。代码：`src/baijiahao.cj` + `scripts/baijiahao_publish.py`。**真机验证（2026-11-04）**：草稿模式存草稿成功（截图取证：标题「cspub 冒烟测试文章」+ 正文标题/加粗/链接/列表/代码块全渲染，字数 88）；`--live` 正式发布带图文章成功（截图取证：「文章发布成功」toast +「提交成功，正在审核中...」页，封面经对话框本地上传）。**踩坑**：新版编辑器是 Lexical（`data-lexical-editor`），标题/正文是两个同名 class 的编辑器（正文=不在 `[data-testid='news-title-input']` 里的那个）；headless 下合成 paste/execCommand 均不生效，逐字键入实测可靠；「确定 (1)」按钮文案带计数须包含匹配；AI 推广弹窗/智能标题气泡/空弹窗包裹层时序不定地拦截点击，须循环关闭并把空包裹层去指针化。
+- **`whoami [platform]`**：按平台自检凭证格式（zhihu 验 `z_c0`/`XSRF-TOKEN`，baijiahao 验 app_id/token，csdn 原样验 UserName）。
+- **front-matter 新键 `origin_url`**（baijiahao 必填），`src/article.cj` 解析。
+- **单元测试 `src/platform_test.cj`**（6 例全过，`cjpm test`）：知乎建草稿/写正文请求体构造、草稿 id 解析（数字/字符串/缺失/非 JSON）、百家号请求体（含 cover_images 内嵌 JSON 回解）、响应 errno 解析、标题长度校验、`origin_url` 解析。
+
+### 变更
+
+- **凭证加载泛化**：`loadConfigString(envName, jsonKey)` 统一环境变量优先 + `~/.cspub/config.json` 兜底，三平台共用；CSDN 行为与报错文案不变。
+- **HTTP 执行抽公共助手**：`execRequest`/`applyHeaders`/`HttpResp` 落 `src/util.cj`，TLS 默认 CustomCA（系统根集 + Certum 根追加，与 csdn.cj 同一套），`--insecure` 语义各平台一致。
+
+### 文档
+
+- **平台选型调研结论**：知乎纯 Cookie 可行（草稿接口，社区多实现佐证）；百家号纯 Cookie 直调发布接口不可行（`/rest/2.0/elite/article/publish` 缺 CSRF 参数必 500，社区 Cookie 工具全靠浏览器自动化），故用官方 token 通道。参考资料见 `docs/仓颉资源地址.md`（同批自 cjh 拷入）。
+
+### 构建
+
+- `cjpm build` 零警告；`cjpm test` 6/6 通过（2026-11-04）。端到端真机验证待用户各平台凭证后补跑。
+
 ## [v0.1.0] - 2026-11-04
 
 首个 tag 版本：CSDN 自动发文 CLI 全链路端到端跑通（图片转存 + 签名 + 发文 + 原地更新）。

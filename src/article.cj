@@ -10,6 +10,7 @@ public class Article {
     public var categories: String
     public var desc: String
     public var draft: Bool
+    public var originUrl: String
     public var body: String
     public init() {
         title = ""
@@ -17,6 +18,7 @@ public class Article {
         categories = ""
         desc = ""
         draft = true
+        originUrl = ""
         body = ""
     }
 }
@@ -95,6 +97,8 @@ func applyFmLine(a: Article, line: String): Unit {
         a.desc = value
     } else if (key == "draft") {
         a.draft = !(value == "false" || value == "no" || value == "0")
+    } else if (key == "origin_url" || key == "originUrl") {
+        a.originUrl = value
     }
 }
 

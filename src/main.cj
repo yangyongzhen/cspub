@@ -34,7 +34,7 @@ main(args: Array<String>): Int64 {
         return 0
     }
     if (cmd == "whoami") {
-        return cmdWhoami()
+        return cmdWhoami(args)
     }
     if (cmd == "check" && args.size >= 2) {
         return cmdCheck(args[1])
@@ -126,22 +126,99 @@ main(args: Array<String>): Int64 {
 }
 
 func usage(): Unit {
-    println("cspub v0.1.0 — CSDN 自动发文 CLI（仓颉实现）")
+    println("cspub v0.2.0 — 多平台自动发文 CLI（仓颉实现）：csdn / zhihu / baijiahao")
     println("")
     println("用法:")
     println("  cspub check   <文章.md>            解析 front-matter + 渲染统计（不联网）")
     println("  cspub publish <文章.md> [--draft]  发草稿（默认）")
     println("                      [--live]       直接发布（覆盖 front-matter 的 draft: true）")
-    println("                      [--update id]  原地更新指定文章")
-    println("  cspub whoami                       校验 Cookie 配置（解析 UserName）")
+    println("                      [--update id]  原地更新指定文章（仅 csdn）")
+    println("                      [--platform p] csdn（默认）/ zhihu / baijiahao / cnblogs")
+    println("  cspub whoami [platform]            校验平台凭证配置（不发网络请求）")
     println("  cspub help                         本帮助")
     println("")
-    println("配置: 环境变量 CSPUB_CSDN_COOKIE 优先，其次 ~/.cspub/config.json 的 csdnCookie 字段")
+    println("配置（环境变量优先，其次 ~/.cspub/config.json 同名小驼峰字段）:")
+    println("  csdn:      CSPUB_CSDN_COOKIE       / csdnCookie（浏览器登录后整串 Cookie）")
+    println("  zhihu:     CSPUB_ZHIHU_COOKIE      / zhihuCookie（须含 z_c0 与 XSRF-TOKEN）")
+    println("  baijiahao: ①官方 token 通道 CSPUB_BAIJIAHAO_APP_ID/TOKEN（需后台「开发」入口，现为定向邀请制）")
+    println("             ②Cookie 浏览器通道 CSPUB_BAIJIAHAO_COOKIE（通用，须含 BDUSS；另需 python3+playwright+chromium）")
+    println("  cnblogs:   CSPUB_CNBLOGS_BLOG_ID、CSPUB_CNBLOGS_USERNAME、CSPUB_CNBLOGS_TOKEN")
+    println("             （MetaWeblog 访问令牌，后台「设置 → 允许博客客户端访问」开启并生成）")
     println("front-matter: title(必填) / tags(逗号分隔,最多5) / categories / desc / draft(true|false)")
+    println("              / origin_url（baijiahao 必填：原文地址/首发链接）")
 }
 
-/** 命令：whoami——解析 Cookie 里的账号标识，配置自检用（不发网络请求） */
-func cmdWhoami(): Int64 {
+/** 载入博客园 MetaWeblog 凭证：环境变量优先，其次 ~/.cspub/config.json */
+func loadCnblogsCreds(): (String, String, String) {
+    let blogId = loadConfigString("CSPUB_CNBLOGS_BLOG_ID", "cnblogsBlogId")
+    let username = loadConfigString("CSPUB_CNBLOGS_USERNAME", "cnblogsUsername")
+    let token = loadConfigString("CSPUB_CNBLOGS_TOKEN", "cnblogsToken")
+    if (blogId.size == 0 || username.size == 0 || token.size == 0) {
+        println("错误：没有找到博客园凭证（三项都要）：")
+        println("  blogId：MetaWeblog 访问地址 https://rpc.cnblogs.com/metaweblog/<博客名> 的尾巴")
+        println("  username：后台 MetaWeblog 设置页显示的登录名（不是昵称/主页路径猜测）")
+        println("  token：同页面的「访问令牌」（不是登录密码）；须先开启「允许博客客户端访问」")
+        println("  方式一：export CSPUB_CNBLOGS_BLOG_ID=… CSPUB_CNBLOGS_USERNAME=… CSPUB_CNBLOGS_TOKEN=…")
+        println("  方式二：~/.cspub/config.json 写 {\"cnblogsBlogId\": \"…\", \"cnblogsUsername\": \"…\", \"cnblogsToken\": \"…\"}")
+    }
+    return (blogId, username, token)
+}
+
+/** 命令：whoami——解析平台凭证里的账号标识，配置自检用（不发网络请求） */
+func cmdWhoami(args: Array<String>): Int64 {
+    var platform = "csdn"
+    if (args.size >= 2) {
+        platform = args[1]
+    }
+    if (platform == "zhihu") {
+        let cookie = loadZhihuCookie()
+        if (cookie.size == 0) {
+            return 1
+        }
+        let zc0 = cookieValue(cookie, "z_c0")
+        let xsrf = cookieValue(cookie, "XSRF-TOKEN")
+        if (zc0.size == 0) {
+            println("Cookie 里没有 z_c0——不是登录态的 Cookie（要浏览器登录 zhuanlan.zhihu.com 后的整串）")
+            return 1
+        }
+        println("z_c0       : 存在（${zc0.size} 字节）")
+        println("XSRF-TOKEN : ${if (xsrf.size > 0) { "存在" } else { "缺失（发文时可能被 403，建议整串复制）" }}")
+        println("Cookie 配置可用（未联网验证；publish 时以知乎实际响应为准）")
+        return 0
+    }
+    if (platform == "cnblogs") {
+        let (blogId, username, token) = loadCnblogsCreds()
+        if (blogId.size == 0 || username.size == 0 || token.size == 0) {
+            return 1
+        }
+        println("blogId  : ${blogId}")
+        println("username: ${username}")
+        println("token   : 已配置（${token.size} 字节）")
+        println("凭证配置可用（未联网验证；publish 时以博客园实际响应为准）")
+        return 0
+    }
+    if (platform == "baijiahao") {
+        let (appId, token) = loadBjhCreds()
+        if (appId.size > 0 && token.size > 0) {
+            println("app_id   : ${appId}")
+            println("app_token: 已配置（${token.size} 字节，泄露需在百家号后台立即重置）")
+            println("凭证配置可用（官方 token 通道；未联网验证）")
+            return 0
+        }
+        let bjhCookie = loadConfigString("CSPUB_BAIJIAHAO_COOKIE", "baijiahaoCookie")
+        if (bjhCookie.size > 0) {
+            let bduss = cookieValue(bjhCookie, "BDUSS")
+            if (bduss.size == 0) {
+                println("Cookie 里没有 BDUSS——不是百度登录态整串（要浏览器登录 baijiahao.baidu.com 后的整串）")
+                return 1
+            }
+            println("BDUSS    : 存在（${bduss.size} 字节）")
+            println("Cookie 配置可用（浏览器自动化通道；未联网验证）")
+            return 0
+        }
+        println("错误：没有找到百家号凭证（① app_id+app_token 或 ② Cookie，见 help）")
+        return 1
+    }
     let cookie = loadCookie()
     if (cookie.size == 0) {
         return 1
@@ -183,12 +260,13 @@ func cmdCheck(path: String): Int64 {
     return 0
 }
 
-/** 命令：publish——解析 + 组包 + 签名 + 发送 */
+/** 命令：publish——解析 + 组包 + 签名/凭证 + 按平台发送 */
 func cmdPublish(args: Array<String>, startIdx: Int64): Int64 {
     var draftOverride = false
     var liveOverride = false
     var updateId = ""
     var insecure = false
+    var platform = "csdn"
     var i = startIdx
     while (i < args.size) {
         if (args[i] == "--draft") {
@@ -197,6 +275,9 @@ func cmdPublish(args: Array<String>, startIdx: Int64): Int64 {
             liveOverride = true
         } else if (args[i] == "--insecure") {
             insecure = true
+        } else if (args[i] == "--platform" && i + 1 < args.size) {
+            platform = args[i + 1]
+            i++
         } else if (args[i] == "--update" && i + 1 < args.size) {
             updateId = args[i + 1]
             i++
@@ -213,11 +294,56 @@ func cmdPublish(args: Array<String>, startIdx: Int64): Int64 {
     }
     let a = parseArticle(text)
     if (a.title.size == 0) {
-        println("错误：front-matter 缺 title（CSDN 必填）")
+        println("错误：front-matter 缺 title（发文必填）")
         return 1
     }
     // 发布态优先级：--live > --draft > front-matter 的 draft（缺省 true = 宁可草稿不发）
     let publishNow = liveOverride || (!draftOverride && !a.draft)
+    if (platform == "zhihu") {
+        let cookie = loadZhihuCookie()
+        if (cookie.size == 0) {
+            return 1
+        }
+        let mode = if (publishNow) { "publish" } else { "draft" }
+        println("发布到知乎（${mode}）…")
+        // 知乎无 CSDN 那种站外图防盗链，暂不转存（知乎编辑器保存时可能剥离部分外链图）
+        return publishToZhihu(cookie, a, publishNow, insecure)
+    }
+    if (platform == "baijiahao") {
+        let (appId, token) = loadBjhCreds()
+        let mode = if (publishNow) { "publish" } else { "draft" }
+        if (appId.size > 0 && token.size > 0) {
+            // 通道一：官方开发者接口（后台「开发」菜单的 app_id/app_token）
+            println("发布到百家号（${mode}，官方 token 通道）…")
+            return publishToBaijiahao(appId, token, a, publishNow, insecure)
+        }
+        // 通道二：Cookie + 浏览器自动化伴生脚本（开发者入口为定向邀请制时的替代）
+        let bjhCookie = loadConfigString("CSPUB_BAIJIAHAO_COOKIE", "baijiahaoCookie")
+        if (bjhCookie.size > 0) {
+            println("发布到百家号（${mode}，Cookie 浏览器通道）…")
+            return publishToBaijiahaoCookie(bjhCookie, a, publishNow)
+        }
+        println("错误：没有找到百家号凭证（两选一）：")
+        println("  ① 官方开发者接口（若账号有「开发」入口）：CSPUB_BAIJIAHAO_APP_ID + CSPUB_BAIJIAHAO_APP_TOKEN")
+        println("     或 config.json 的 baijiahaoAppId / baijiahaoAppToken")
+        println("  ② Cookie 浏览器通道（推荐，通用）：CSPUB_BAIJIAHAO_COOKIE 或 config.json 的 baijiahaoCookie")
+        println("     Cookie 获取：浏览器登录 baijiahao.baidu.com → F12 → 复制 Cookie 整串（须含 BDUSS）")
+        println("     通道②另需宿主机：python3 + playwright + chromium（pip install playwright && playwright install chromium）")
+        return 1
+    }
+    if (platform == "cnblogs") {
+        let (blogId, username, token) = loadCnblogsCreds()
+        if (blogId.size == 0 || username.size == 0 || token.size == 0) {
+            return 1
+        }
+        let mode = if (publishNow) { "publish" } else { "draft" }
+        println("发布到博客园（${mode}）…")
+        return publishToCnblogs(blogId, username, token, a, publishNow, insecure)
+    }
+    if (platform != "csdn") {
+        println("未知平台：${platform}（可选 csdn / zhihu / baijiahao）")
+        return 1
+    }
     let cookie = loadCookie()
     if (cookie.size == 0) {
         return 1
@@ -266,7 +392,37 @@ func countLines(s: String): Int64 {
 
 /** 载入 CSDN Cookie：环境变量优先，其次 ~/.cspub/config.json */
 func loadCookie(): String {
-    match (getVariable("CSPUB_CSDN_COOKIE")) {
+    let c = loadConfigString("CSPUB_CSDN_COOKIE", "csdnCookie")
+    if (c.size == 0) {
+        println("错误：没有找到 CSDN Cookie。")
+        println("  方式一：export CSPUB_CSDN_COOKIE='<浏览器复制的 Cookie 整串>'")
+        println("  方式二：mkdir -p ~/.cspub && 写 ~/.cspub/config.json：{\"csdnCookie\": \"...\"}")
+    }
+    return c
+}
+
+/** 载入知乎 Cookie：环境变量优先，其次 ~/.cspub/config.json 的 zhihuCookie 字段 */
+func loadZhihuCookie(): String {
+    let c = loadConfigString("CSPUB_ZHIHU_COOKIE", "zhihuCookie")
+    if (c.size == 0) {
+        println("错误：没有找到知乎 Cookie。")
+        println("  方式一：export CSPUB_ZHIHU_COOKIE='<浏览器复制的 Cookie 整串，须含 z_c0>'")
+        println("  方式二：mkdir -p ~/.cspub && 写 ~/.cspub/config.json：{\"zhihuCookie\": \"...\"}")
+        println("  获取：浏览器登录 zhuanlan.zhihu.com → F12 → 任一请求 → 复制 Cookie 请求头整串")
+    }
+    return c
+}
+
+/** 载入百家号开发者凭证：环境变量优先，其次 ~/.cspub/config.json；缺失返回空串（调用方兜底 Cookie 通道） */
+func loadBjhCreds(): (String, String) {
+    let appId = loadConfigString("CSPUB_BAIJIAHAO_APP_ID", "baijiahaoAppId")
+    let token = loadConfigString("CSPUB_BAIJIAHAO_APP_TOKEN", "baijiahaoAppToken")
+    return (appId, token)
+}
+
+/** 通用凭证读取：环境变量 envName 优先，其次 ~/.cspub/config.json 的 jsonKey 字符串字段 */
+func loadConfigString(envName: String, jsonKey: String): String {
+    match (getVariable(envName)) {
         case Some(v) =>
             if (v.size > 0) {
                 return v
@@ -283,7 +439,7 @@ func loadCookie(): String {
                 match (root.kind()) {
                     case JsonKind.JsObject =>
                         let obj = root.asObject()
-                        if (let Some(v) <- obj.get("csdnCookie")) {
+                        if (let Some(v) <- obj.get(jsonKey)) {
                             match (v.kind()) {
                                 case JsonKind.JsString => return v.asString().getValue()
                                 case _ => ()
@@ -296,8 +452,5 @@ func loadCookie(): String {
             }
         case None => ()
     }
-    println("错误：没有找到 CSDN Cookie。")
-    println("  方式一：export CSPUB_CSDN_COOKIE='<浏览器复制的 Cookie 整串>'")
-    println("  方式二：mkdir -p ~/.cspub && 写 ~/.cspub/config.json：{\"csdnCookie\": \"...\"}")
     return ""
 }
