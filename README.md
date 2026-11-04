@@ -27,6 +27,14 @@ cspub publish 我的文章.md --live  # 直接发布
 
 全部用仓颉标准库 + stdx 实现（HMAC / Base64 / HTTP / JSON），零第三方依赖。
 
+## 发文数据流
+
+一条命令背后是六环节流水线，全部自动完成：
+
+![cspub 发文数据流](docs/imgs/cspub-flow.png)
+
+> 源图 `docs/imgs/cspub-flow.svg`（可编辑）。第②步"图片自动转存"的防线细节见下文「图片转存」一节。
+
 ## 为什么是仓颉
 
 这是个真实场景练手项目：华为仓颉的 stdx 恰好齐活一条「HTTP 客户端 + HMAC 签名 + JSON」链路，
@@ -124,6 +132,13 @@ draft: true                # 缺省 true；publish 时 --live 可覆盖
   `import stdx.net.tls.common.*`、变体写限定名（`CertificateVerifyMode.TrustAll` / `CertificateVerifyMode.CustomCA`）；
   且 `CustomCA` 收的是 `Array<Certificate>`（接口），而 `X509Certificate.decodeFromPem` 返回
   `Array<X509Certificate>`（类）——Array 不协变，得显式搬一次。源码以 1.2.0 为准，1.0.5.1 下这几处编译不过。
+
+## 版本维护
+
+- **版本号**：`cjpm.toml` 的 `version` 字段是单一真相；发版时同步更新 `CHANGELOG.md`，规则沿用 cjh——重大更新递增中间位、小更新递增末位。
+- **变更记录**：`CHANGELOG.md` 按 Keep a Changelog 风格维护（新增 / 变更 / 修复 / 文档 / 构建 分节），每条带验证证据（实测输出、错误码、转存结果），不写没有证据的条目。
+- **发布流程**：`cjpm build` → 产物入 `dist/`（tar.gz + SHA256SUMS）→ 打 tag（`v0.1.0` 格式）→ 基于 tag 发 release 并附产物。详见 `docs/发布与版本维护.md`。
+- **开发规范**：见 [AGENTS.md](./AGENTS.md)——变更交付门禁、代码组织原则、踩坑沉淀与文档规范。
 
 ## 已知限制
 
