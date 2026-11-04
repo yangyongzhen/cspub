@@ -13,8 +13,10 @@
 </div>
 
 ```bash
-cspub publish 我的文章.md          # 默认发草稿（宁可草稿也不误发布）
-cspub publish 我的文章.md --live  # 直接发布
+cspub publish 我的文章.md --platform csdn       # 默认发草稿（宁可草稿也不误发布）
+cspub publish 我的文章.md --platform zhihu      # 知乎专栏（Cookie 登录态）
+cspub publish 我的文章.md --platform baijiahao  # 百家号（后台开发者凭证）
+cspub publish 我的文章.md --live                # 直接发布
 ```
 
 ## 它做什么
@@ -55,13 +57,47 @@ cjpm build
 # Windows 交叉编译：./scripts/winbuild.sh（方案沿用 cjh，产出 exe + 自包含 zip）
 ```
 
-## 配置 Cookie（二选一）
+## 配置凭证（各平台二选一）
 
-1. 环境变量（推荐，不落盘）：`export CSPUB_CSDN_COOKIE='<浏览器复制的 Cookie 整串>'`
-2. 配置文件：`~/.cspub/config.json` 写 `{"csdnCookie": "..."}`（`chmod 600`）
+| 平台 | 环境变量 | config.json 字段 | 获取方式 |
+| --- | --- | --- | --- |
+| csdn | `CSPUB_CSDN_COOKIE` | `csdnCookie` | 浏览器登录 → F12 → 复制 Cookie 整串 |
+| zhihu | `CSPUB_ZHIHU_COOKIE` | `zhihuCookie` | 登录 zhuanlan.zhihu.com → F12 → 复制 Cookie 整串（须含 `z_c0`） |
+| baijiahao | `CSPUB_BAIJIAHAO_COOKIE`（通用）或 `CSPUB_BAIJIAHAO_APP_ID` / `CSPUB_BAIJIAHAO_APP_TOKEN` | `baijiahaoCookie` 或 `baijiahaoAppId` / `baijiahaoAppToken` | ①Cookie：登录 baijiahao.baidu.com → F12 → 复制整串（须含 `BDUSS`）②开发者：后台「开发 → 基本配置」（现为定向邀请制，有入口才可用） |
 
-Cookie 获取：浏览器登录 CSDN → F12 → 任一 `blog.csdn.net` 请求 → 复制请求头里 Cookie 的整串。
-`cspub whoami` 校验配置是否就位（解析 UserName/UserNick，只验格式不联网）。
+配置文件：`~/.cspub/config.json`（`chmod 600`），例：
+`{"csdnCookie": "...", "zhihuCookie": "...", "baijiahaoCookie": "..."}`
+
+### 环境变量方式（推荐，不落盘）
+
+环境变量与 config.json 二选一即可；**环境变量优先**——同时配置时以环境变量为准（临时换号/测试时不必改配置文件）。
+
+**临时生效**（当前终端会话，关闭即失效）：
+
+```bash
+export CSPUB_CSDN_COOKIE='<浏览器 F12 复制的 Cookie 整串>'
+cspub publish 我的文章.md --live
+```
+
+**持久生效**（写进 shell profile，每次新开终端自动带上）：
+
+```bash
+# ~/.bashrc（zsh 用户写 ~/.zshrc）
+echo "export CSPUB_CSDN_COOKIE='<Cookie 整串>'" >> ~/.bashrc
+source ~/.bashrc
+
+# 多平台就各写一行
+echo "export CSPUB_ZHIHU_COOKIE='<Cookie 整串>'" >> ~/.bashrc
+```
+
+> Cookie 整串含空格与分号，写 profile 时务必用单引号包裹（单引号内 shell 不展开，原样存为变量值）；
+> Cookie 过期后重取整串，`sed -i` 定向替换旧行或重新 `echo >>` 即可。
+
+**安全提示**：环境变量对同机其他进程可见（`/proc/<pid>/environ`），共享机器建议改用 config.json + `chmod 600`；个人机器两者皆可。
+
+> 百家号双通道：纯 Cookie 直调其发布接口不可行（React 发布按钮需完整事件链，直调 API 缺 CSRF 必 500），所以 **Cookie 通道走浏览器自动化**——`--platform baijiahao` 自动调起 `scripts/baijiahao_publish.py`（Playwright 填表单 + 点发布），宿主机需 `pip install playwright && playwright install chromium`；配置了开发者凭证则优先走官方 token 接口。
+
+`cspub whoami [csdn|zhihu|baijiahao]` 校验凭证是否就位（只验格式不联网）。
 
 ## 用法
 
