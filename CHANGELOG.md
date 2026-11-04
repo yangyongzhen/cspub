@@ -28,9 +28,14 @@ cspub 版本变更记录。版本号规则沿用 cjh：重大更新递增中间�
 
 - **stdx 1.2.0 编译适配**：`CertificateVerifyMode` 移至 `stdx.net.tls.common` 子包，需显式 `import stdx.net.tls.common.*` 且变体写限定名；`CustomCA` 收 `Array<Certificate>`（接口）而 `X509Certificate.decodeFromPem` 返回 `Array<X509Certificate>`（类），Array 不协变需显式搬移。源码以 1.2.0 为准，1.0.5.1 下这几处编译不过。
 
+### 构建
+
+- **双平台产物**：Linux `cspub-v0.1.0-linux-x64`（7.1 MB）+ tar.gz（2.3 MB）；Windows 交叉编译 `cspub-v0.1.0-windows-x64.exe`（8.2 MB，mingw strip 后）+ 自包含 zip（exe + libboundscheck / libcangjie-runtime / libcrypto-3-x64 / libssl-3-x64 四 DLL，解压同目录即用）。交叉编译方案沿用 cjh（`scripts/winbuild.sh`：临时替换 link-option 为 `-lcrypt32 -lws2_32`、补 windows target stdx 静态库路径、mingw strip 裁剪、结束恢复基线）；PE 导入表核对：CRYPT32 / KERNEL32 / libcangjie-runtime / msvcrt / SHELL32 / WS2_32，无第三方运行时 DLL 链接。`dist/SHA256SUMS` 覆盖四产物，逐项 OK。
+- 新增 `scripts/winbuild.sh`（cjh 同款方案，cspub 适配：link-option 由空串替换填入）。
+
 ### 已知限制
 
 - 表格 / 脚注 / 任务列表等扩展 Markdown 不渲染（原样进段落）；
 - 未做多平台（掘金/博客园接口形状不同）；
-- Windows 侧未实测（stdx http 在 Linux 验证）；
+- Windows exe 本机交叉编译产出（导入表核对），未在真机 Windows 实测发文链路；
 - CSDN 每日发文限额：单账号每天 1 篇，额度用满时 `saveArticle` 回 `{"code":400300012,...}`，存草稿同样被拒（400300001）——非工具问题，换自然日或换账号。

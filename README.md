@@ -52,6 +52,7 @@ export CANGJIE_STDX=<stdx>/dynamic/stdx      # 1.2.0 配套的 stdx
 export PATH=$CANGJIE_HOME/bin:$CANGJIE_HOME/tools/bin:$PATH
 cjpm build
 # 产物：target/release/bin/main
+# Windows 交叉编译：./scripts/winbuild.sh（方案沿用 cjh，产出 exe + 自包含 zip）
 ```
 
 ## 配置 Cookie（二选一）
@@ -145,7 +146,7 @@ draft: true                # 缺省 true；publish 时 --live 可覆盖
 - 表格 / 脚注 / 任务列表等扩展 Markdown 不渲染（原样进段落）；
 - 更新文章只支持 `--update <id>`（id 在首次发布成功后回显）；
 - 未做多平台（掘金/博客园接口形状不同，要了再加）；
-- **Windows 侧未实测**（stdx http 在 Linux 验证；理论上可交叉编译）；
+- **Windows 侧**：`./scripts/winbuild.sh` 交叉编译产出 exe（8.2 MB，mingw strip 后）+ 自包含 zip（exe + libboundscheck / libcangjie-runtime / libcrypto-3-x64 / libssl-3-x64 四 DLL，解压同目录即用）；发文链路未在真机 Windows 实测；
 - **CSDN 每日发文限额**：实测该账号每天只能发 1 篇，额度用满时 `saveArticle` 直接回
   `{"code":400300012,"msg":"今天发表文章数量已达到限制的1篇。"}`；存草稿（`status=2` / `pubStatus=draft`）
   同样被拒（错误码 400300001）——这不是工具问题，换自然日或换账号即可；
