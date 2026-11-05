@@ -2,7 +2,7 @@
   cjc-version = "1.2.0"
   name = "cspub"
   description = "cspub 多平台文章发布助手（仓颉实现）：Markdown + front-matter 一条命令发 CSDN/知乎/百家号"
-  version = "0.2.2"
+  version = "0.2.5"
   output-type = "executable"
   compile-option = ""
   link-option = ""

@@ -302,3 +302,163 @@ func juejinRespParseTest(): Unit {
     let (e4, _, _) = parseJuejinResp("<html>login</html>", "id")
     @Assert(e4, -1)
 }
+
+@Test
+func atomgitRawUrlTest(): Unit {
+    // 与掘金文章里实测可渲染的外链同形
+    @Assert(atomgitRawUrl("qq8864/images", "cspub/abc.png", "main"),
+        "https://atomgit.com/api/v5/repos/qq8864/images/raw/cspub/abc.png?ref=main")
+    // 分支为空兜底 main，避免 ?ref= 空参
+    @Assert(atomgitRawUrl("a/b", "x.png", ""),
+        "https://atomgit.com/api/v5/repos/a/b/raw/x.png?ref=main")
+}
+
+@Test
+func atomgitImagePathTest(): Unit {
+    @Assert(atomgitImagePath("cspub", "abc123", "png"), "cspub/abc123.png")
+    // 扩展名带点/不带点都归一；目录两端斜杠与空白裁掉
+    @Assert(atomgitImagePath("/cspub/", "abc123", ".jpg"), "cspub/abc123.jpg")
+    @Assert(atomgitImagePath("  cspub  ", "abc123", "webp"), "cspub/abc123.webp")
+    // 目录为空：不留前导斜杠（否则仓库路径会变成绝对路径）
+    @Assert(atomgitImagePath("", "abc123", "png"), "abc123.png")
+    // 扩展名缺失兜底 png
+    @Assert(atomgitImagePath("cspub", "abc123", ""), "cspub/abc123.png")
+}
+
+@Test
+func atomgitCommitBodyTest(): Unit {
+    let body = buildAtomgitCommitBody("aGVsbG8=", "cspub: 上传正文图片 x.png", "main")
+    let root = JsonValue.fromStr(body)
+    @Assert(root.asObject().get("content").isSome(), true)
+    let content = jsonScalar(root, "content")
+    @Assert(content, "aGVsbG8=")
+    @Assert(jsonScalar(root, "branch"), "main")
+    // 分支为空时不写 branch 字段（交给仓库默认分支）
+    let b2 = JsonValue.fromStr(buildAtomgitCommitBody("aGVsbG8=", "msg", ""))
+    @Assert(b2.asObject().get("branch").isNone(), true)
+}
+
+@Test
+func atomgitCommitShaParseTest(): Unit {
+    // 成功结构：commit.sha
+    @Assert(parseAtomgitCommitSha("{\"commit\": {\"sha\": \"668cb104\", \"message\": \"cspub\"}}"), "668cb104")
+    // 401/400 错误结构：没有 commit，按失败处理
+    @Assert(parseAtomgitCommitSha("{\"error_code\": 401, \"error_message\": \"token not found\"}"), "")
+    // 非 JSON 响应同样按失败处理
+    @Assert(parseAtomgitCommitSha("<html>oops</html>"), "")
+    @Assert(parseAtomgitCommitSha(""), "")
+}
+
+// ── 开源中国（oschina）──
+
+@Test
+func oschinaCookieSessionTest(): Unit {
+    // 登录态判据只看 oscid 是否存在
+    @Assert(oschinaCookieHasSession("oscid=abc; other=1"), true)
+    @Assert(oschinaCookieHasSession("oscid="), false)
+    @Assert(oschinaCookieHasSession("BDUSS=xx; sessionid=yy"), false)
+    @Assert(oschinaCookieHasSession(""), false)
+}
+
+@Test
+func oschinaNumTest(): Unit {
+    @Assert(oschinaNum("4197674"), 4197674)
+    @Assert(oschinaNum("  6616685  "), 6616685)
+    // 空/非法一律 0（catalog=0 表示账号默认分类）
+    @Assert(oschinaNum(""), 0)
+    @Assert(oschinaNum("abc"), 0)
+}
+
+@Test
+func oschinaDraftBodyTest(): Unit {
+    let body = buildOschinaDraftBody("标题", "## 正文", "4197674", "6616685", true, false)
+    let root = JsonValue.fromStr(body)
+    @Assert(jsonScalar(root, "title"), "标题")
+    @Assert(jsonScalar(root, "content"), "## 正文")
+    // Markdown 原文提交，contentType 固定 1
+    @Assert(jsonScalar(root, "contentType"), "1")
+    @Assert(jsonScalar(root, "user"), "4197674")
+    @Assert(jsonScalar(root, "catalog"), "6616685")
+    @Assert(jsonScalar(root, "privacy"), "1")
+    @Assert(jsonScalar(root, "disableComment"), "0")
+}
+
+@Test
+func oschinaPublishBodyTest(): Unit {
+    // 无 origin_url：原创 type=1，draft=0 表示正式发布
+    let own = JsonValue.fromStr(buildOschinaPublishBody("标题", "正文", "1", "6616685", "", false, false))
+    @Assert(jsonScalar(own, "type"), "1")
+    @Assert(jsonScalar(own, "draft"), "0")
+    @Assert(jsonScalar(own, "contentType"), "1")
+    // 带 origin_url：按转载 type=4 提交
+    let rep = JsonValue.fromStr(buildOschinaPublishBody("标题", "正文", "1", "6616685",
+        "https://example.com/a", false, false))
+    @Assert(jsonScalar(rep, "type"), "4")
+    @Assert(jsonScalar(rep, "originUrl"), "https://example.com/a")
+}
+
+@Test
+func oschinaRespParseTest(): Unit {
+    // 草稿：result 是对象，取 result.id
+    let (c1, _, id1) = parseOschinaResp(
+        "{\"success\":true,\"code\":200,\"message\":\"操作成功！\",\"result\":{\"id\":3343542,\"title\":\"x\"}}")
+    @Assert(c1, 200)
+    @Assert(id1, "3343542")
+    // 发布：result 直接就是博客 id（数字）
+    let (c2, _, id2) = parseOschinaResp("{\"success\":true,\"code\":200,\"result\":778899}")
+    @Assert(c2, 200)
+    @Assert(id2, "778899")
+    // 未登录：code 40001，无 result
+    let (c3, msg3, id3) = parseOschinaResp(
+        "{\"success\":false,\"code\":40001,\"message\":\"用户未登录，请先登录\",\"result\":null}")
+    @Assert(c3, 40001)
+    @Assert(msg3, "用户未登录，请先登录")
+    @Assert(id3, "")
+    // 非 JSON 响应：code -1，不能当成功
+    let (c4, _, _) = parseOschinaResp("<html>oops</html>")
+    @Assert(c4, -1)
+    // 图床：result 直接是直链字符串（含未用的 //null/ 段也照样有效）
+    let (c5, _, url5) = parseOschinaResp(
+        "{\"success\":true,\"code\":200,\"message\":\"上传成功\"," +
+        "\"result\":\"https://oscimg.oschina.net//null/up-abc.png\"}")
+    @Assert(c5, 200)
+    @Assert(url5, "https://oscimg.oschina.net//null/up-abc.png")
+}
+
+@Test
+func oschinaCatalogPickTest(): Unit {
+    let catalogs = "{\"code\":200,\"result\":[" +
+        "{\"id\":6616684,\"name\":\"工作日志\"}," +
+        "{\"id\":6616685,\"name\":\"日常记录\"}," +
+        "{\"id\":6616686,\"name\":\"转贴的文章\"}]}"
+    // 配置优先
+    @Assert(pickOschinaCatalog(catalogs, "日常记录", "999"), "999")
+    // 名称匹配
+    @Assert(pickOschinaCatalog(catalogs, "日常记录", ""), "6616685")
+    // 匹配不到取第一个
+    @Assert(pickOschinaCatalog(catalogs, "不存在的分类", ""), "6616684")
+    @Assert(pickOschinaCatalog(catalogs, "", ""), "6616684")
+    // 响应异常：空串（调用方据此报错）
+    @Assert(pickOschinaCatalog("{\"code\":40001}", "", ""), "")
+    @Assert(pickOschinaCatalog("not json", "", ""), "")
+}
+
+@Test
+func oschinaTitleAndUrlTest(): Unit {
+    @Assert(oschinaTitleOrDefault("已有标题", "正文"), "已有标题")
+    // 无标题：取正文首个非空行并剥掉 Markdown 标记
+    @Assert(oschinaTitleOrDefault("", "## 仓颉踩坑\n正文"), "仓颉踩坑")
+    @Assert(oschinaTitleOrDefault("", "\n\n  \n正文首行\n第二行"), "正文首行")
+    @Assert(oschinaTitleOrDefault("", ""), "无标题草稿")
+    @Assert(oschinaArticleUrl("778899"), "https://www.oschina.net/blog/778899")
+}
+
+@Test
+func oschinaLocalImageDetectTest(): Unit {
+    // 只有外链/data 时不需要提示丢失；有本地路径才提示
+    @Assert(hasLocalImages("![a](https://x/y.png)"), false)
+    @Assert(hasLocalImages("![a](data:image/png;base64,AAA)"), false)
+    @Assert(hasLocalImages("![a](/tmp/a.png)"), true)
+    @Assert(hasLocalImages("![a](https://x/y.png)\n![b](imgs/c.png)"), true)
+    @Assert(hasLocalImages("没有图片"), false)
+}

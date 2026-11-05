@@ -2,6 +2,112 @@
 
 cspub 版本变更记录。版本号规则沿用 cjh：重大更新递增中间位，小更新递增末位；版本号单一真相在 `cjpm.toml` 的 `version` 字段。每条变更须带验证证据（实测输出、错误码、转存结果），不写没有证据的条目。
 
+## [v0.2.5] - 2026-11-05
+
+开源中国 `--live` 正式发布实跑，修掉一处把文章地址拼错的 bug，并记录三条「发布成功≠立刻公开」的平台特性。
+
+### 修复
+
+- **`oschinaArticleUrl` 拼错文章地址**：原实现给 `${OSCHINA_SITE}/u/{userId}/blog/{id}`，实测该路径服务端
+  直接 **404**（1548 字节错误页）；正确的 SPA 路由是 `${OSCHINA_SITE}/blog/{id}`。函数签名随之简化为
+  `oschinaArticleUrl(id)`（userId 已不再需要），单测断言同步改为实测可用形式。
+
+### 新增
+
+- **README「开源中国：正式发布的三个实测特性」**：正文提交 Markdown 但服务端存 HTML（别预渲染）、
+  tags 由平台按正文自动提取（front-matter 写的标签不生效）、文章 URL 形式与 SPA 外壳陷阱。
+
+### 验证
+
+- **正式发布（铁证）**：`publish /tmp/oschina_live.md --platform oschina --live` 输出
+  `分类 catalog：6616684（front-matter：工作日志）` / `图片（oschina 图床）：成功 3，失败 0` /
+  `发布成功，博客 id 19787222`。发的是 cj-tauri 仓库的带图长文（`docs/cj-tauri-介绍与movie实战.md`，
+  3 张本地图共 1.55MB）。
+- **正文与图片线上核验（铁证）**：`GET /oschinapi/blog/detail?id=19787222` 回读 `contentType=1`、
+  `catalog=6616684`，正文为服务端渲染后的 HTML（`<h2>/<p>`），3 张图已换成
+  `oscimg.oschina.net//null/up-<md5>.png`；三张直链浏览器 UA 取回均 `HTTP 200`，大小
+  617773 / 705372 / 259509 字节，与源图**逐字节一致**。
+- **待确认（未解决）**：公开页面 `https://www.oschina.net/blog/19787222` 用 chromium 渲染得到
+  「找不到您访问的页面」（正文长度 113、oscimg 图 0），带登录 Cookie 亦然——文章已入库但未对外可见，
+  判断为新号/首篇走人工审核。**该条不构成发布链路失败**，但「发布后多久可见」需过一段时间复验。
+- `cjpm build` 零警告；`cjpm test` **32/32 通过**。
+
+## [v0.2.4] - 2026-11-05
+
+新增第六个平台：开源中国（OSCHINA）博客。纯 Cookie HTTP，零浏览器，且直接用它**自带的图床**。
+
+### 新增
+
+- **开源中国发文通道**（`src/oschina.cj`，约 320 行）：走站点编辑器自用的 apiv1（不是要注册应用的官方
+  OpenAPI）——`POST /oschinapi/api/draft/save_draft` 存草稿、`POST /oschinapi/blog/web/add` 正式发布，
+  正文以 `contentType: 1`（Markdown）原样提交。鉴权只要 Cookie 里的 `oscid`，请求带
+  `Referer/Origin: https://www.oschina.net`。
+- **自带图床通道**：`POST /oschinapi/upload/img`（multipart 字段 `file`），返回 `oscimg.oschina.net`
+  直链；实测 2MB 图片单请求即可，无需分片。图片优先级改为 **平台图床 → AtomGit 外链兜底 → 保留原引用**。
+- **`--platform oschina` 分发 + `whoami oschina` 自检**：显示 oscid 字节数、userId/catalog 是否预置、
+  privacy 语义与图片通道。
+- **分类自动匹配**：`GET /oschinapi/blog_catalog/list_by_user`，front-matter `categories` 名匹配 →
+  取账号第一个分类；可用 `CSPUB_OSCHINA_CATALOG` 直接指定。
+- **单元测试新增 8 例**（总 32 例全过）：Cookie 登录态判定、数字兜底解析、草稿/发布请求体对账
+  （`contentType=1`、`type` 1 原创/4 转载、`draft=0`）、响应解析（草稿 `result.id` / 发布标量 `result` /
+  图床 `result` 直链 / 未登录 40001 / 非 JSON 保 -1）、分类三级兜底、标题兜底、本地图检测。
+
+### 修复
+
+- **`parseOschinaResp` 的 code 缺省值**：非 JSON 响应原先被算成 `code=0` 而非 `-1`，会被误判成成功；
+  改为 code 字段缺失时保留 `-1`。
+- **标题兜底不能用 `stripMarkdown`**：它把多行拼成一行，会把正文前半段当标题；改为逐行取首个非空行
+  并剥掉行首 `#/>/- /*` 标记。
+
+### 验证
+
+- **真机草稿（铁证）**：`publish /tmp/oschina_test.md --platform oschina` 输出
+  `分类 catalog：6616685（front-matter：日常记录）` / `图片（oschina 图床）：成功 1，失败 0` /
+  `草稿已保存，id 3343548`；随后 `GET /api/draft/edit/detail?id=3343548` 回读，正文 Markdown 原样、
+  图片已回写为 `https://oscimg.oschina.net//null/up-5792a5fa58f99feee8a4f3a58e7aef54.png`。
+- **图床直链可用（铁证）**：浏览器 UA + Referer 取该链接 → `HTTP 200`、`130318` 字节、
+  `content-type: image/png`，与源图 `docs/imgs/cspub-flow.png` **逐字节一致**（裸 curl 无 UA 会被
+  CDN 返回 146 字节 403，属正常拦截，不是死链）。
+- `cjpm build` clean 全量重建 **零警告**；`cjpm test` **32/32 通过**。
+- **待补**：`--live` 正式发布未跑（会公开一篇文章，等确认）；`privacy` 字段语义（true 是否=仅自己可见）
+  尚未实测确认，故做成 `CSPUB_OSCHINA_PRIVACY` 可配置项，默认 `false`（公开）。
+
+## [v0.2.3] - 2026-11-05
+
+掘金图片改「外链优先」：本地图上传 AtomGit 图床，正文嵌 raw 外链，不再依赖浏览器通道。
+
+### 新增
+
+- **AtomGit 图床外链通道**（`src/atomgit.cj`）：配置 `CSPUB_ATOMGIT_TOKEN` 后，掘金发文前的本地图片改由
+  AtomGit 仓库承载——`POST /api/v5/repos/{owner}/{repo}/contents/{path}`（base64 内容 + 分支），
+  正文回写 `https://atomgit.com/api/v5/repos/{owner}/{repo}/raw/{path}?ref={branch}`。默认仓库
+  `qq8864/images`、分支 `main`、目录 `cspub`（可用 `CSPUB_ATOMGIT_REPO/BRANCH/DIR` 覆盖）。
+  令牌走 `Authorization: Bearer` 头，不落 URL（避免被日志带走）。
+- **`whoami juejin` 增加图片通道自检行**：显示「外链优先（AtomGit …）」或「平台图床（走 ImageX 浏览器通道）」。
+- **单元测试新增 4 例**（总 24 例全过）：raw 外链拼接（含空分支兜底 main）、仓库路径生成（斜杠/空白裁剪、
+  扩展名归一、空目录不留前导斜杠）、新建文件请求体对账（含 branch 省略）、`commit.sha` 解析（错误结构与非 JSON 兜底）。
+
+### 变更
+
+- **掘金图片通道改为三级降级**：① AtomGit 外链（配了令牌）→ ② 伴生脚本 `scripts/juejin_upload.py`
+  （浏览器通道 ImageX）→ ③ 仓颉内置 ImageX。① 里单张失败自动往 ②③ 降、最终仍失败保留原引用并提示，
+  **best-effort 语义不变，不阻断发文**。
+
+### 验证
+
+- **掘金认外链（铁证）**：`https://juejin.cn/post/7704394460696461350` 正文 3 张图全为
+  `atomgit.com/api/v5/repos/qq8864/cj-tauri/raw/...?ref=main`，浏览器渲染 `loaded=True`；
+  再用 cspub 以 API 建草稿复验（非编辑器手写）：正文外链图 `loaded=True 3120x2080`，草稿 `7704389851194605594`
+  → 外链不需要转存到掘金图床。
+- **raw 外链匿名可直取**：`.../qq8864/images/raw/cjh/arch-diagram.png?ref=main` → `HTTP 200`
+  `content-type: image/jpeg`，210777 字节。
+- **降级链真机验证**：故意用无效令牌跑 `publish /tmp/jj_local.md --platform juejin --insecure`
+  → 输出 `⚠ AtomGit 令牌无效或权限不足（HTTP 401）` → 依次尝试浏览器通道与内置 ImageX（后者仍报已知的
+  `SignatureDoesNotMatch`）→ 最终「保留原引用」且**草稿照常建成** `7704345988459397158`，发文未被阻断。
+- **构建**：`cjpm build` 零警告（clean 全量重建），`cjpm test` 24/24 通过（2026-11-05）。
+- **待补**：有效令牌下的成功上传尚无真机回显（本机无 AtomGit 令牌），配置 `CSPUB_ATOMGIT_TOKEN` 后需跑一篇
+  带本地图文章的草稿确认正文图片渲染。
+
 ## [v0.2.2] - 2026-11-05
 
 新增掘金平台（Cookie 两步流，纯 HTTP 零浏览器）。

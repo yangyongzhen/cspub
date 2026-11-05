@@ -4,7 +4,7 @@
 
 **多平台文章发布助手 —— 用华为仓颉语言实现**
 
-一份 Markdown（带 front-matter），一条命令发到多个平台：CSDN / 知乎 / 百家号，自动签名/登录、自动转存图片、默认发草稿。
+一份 Markdown（带 front-matter），一条命令发到多个平台：CSDN / 知乎 / 百家号 / 博客园 / 掘金 / 开源中国，自动签名/登录、自动转存图片、默认发草稿。
 
 [![Language](https://img.shields.io/badge/%E8%AF%AD%E8%A8%80-%E4%BB%93%E9%A2%89%201.0.5%2B-ff69b4)](https://cangjie-lang.cn)
 [![License](https://img.shields.io/badge/%E8%AE%B8%E5%8F%AF%E8%AF%81-MIT-green)](./LICENSE)
@@ -17,7 +17,8 @@ cspub publish 我的文章.md --platform csdn       # CSDN（Cookie + 网关签�
 cspub publish 我的文章.md --platform zhihu      # 知乎专栏（Cookie 登录态，图片自动转存知乎 CDN）
 cspub publish 我的文章.md --platform baijiahao  # 百家号（Cookie 浏览器通道 / 开发者凭证）
 cspub publish 我的文章.md --platform cnblogs    # 博客园（官方 MetaWeblog API，纯 HTTP）
-cspub publish 我的文章.md --platform juejin     # 掘金（Cookie 两步流；图片走浏览器通道）
+cspub publish 我的文章.md --platform juejin     # 掘金（Cookie 两步流；图片外链优先，AtomGit 图床）
+cspub publish 我的文章.md --platform oschina    # 开源中国（Cookie 直通站点接口；图片走它自带图床）
 cspub publish 我的文章.md --live                # 直接发布
 ```
 
@@ -67,7 +68,9 @@ cjpm build
 | zhihu | `CSPUB_ZHIHU_COOKIE` | `zhihuCookie` | 登录 zhuanlan.zhihu.com → F12 → 复制 Cookie 整串（须含 `z_c0`） |
 | baijiahao | `CSPUB_BAIJIAHAO_COOKIE`（通用）或 `CSPUB_BAIJIAHAO_APP_ID` / `CSPUB_BAIJIAHAO_APP_TOKEN` | `baijiahaoCookie` 或 `baijiahaoAppId` / `baijiahaoAppToken` | ①Cookie：登录 baijiahao.baidu.com → F12 → 复制整串（须含 `BDUSS`）②开发者：后台「开发 → 基本配置」（现为定向邀请制，有入口才可用） |
 | cnblogs | `CSPUB_CNBLOGS_BLOG_ID` / `CSPUB_CNBLOGS_USERNAME` / `CSPUB_CNBLOGS_TOKEN` | `cnblogsBlogId` / `cnblogsUsername` / `cnblogsToken` | 后台设置 → 开启「允许博客客户端访问」→ 复制 MetaWeblog 访问地址尾巴（博客名）、登录名与访问令牌（**非登录密码**） |
-| juejin | `CSPUB_JUEJIN_COOKIE`（+ 可选 `CSPUB_JUEJIN_UUID/CATEGORY_ID/TAG_IDS`） | `juejinCookie` 等 | 登录 juejin.cn → F12 → 复制 Cookie 整串（须含 `sessionid`）；分类/标签用后台抓包的内部 ID（可选）。正文图片转存走浏览器通道，需 `pip install playwright && playwright install chromium` |
+| juejin | `CSPUB_JUEJIN_COOKIE`（+ 可选 `CSPUB_JUEJIN_UUID/CATEGORY_ID/TAG_IDS`） | `juejinCookie` 等 | 登录 juejin.cn → F12 → 复制 Cookie 整串（须含 `sessionid`）；分类/标签用后台抓包的内部 ID（可选）。正文图片**外链优先**：配了 `CSPUB_ATOMGIT_TOKEN` 就走 AtomGit 图床，否则降级浏览器通道（需 `pip install playwright && playwright install chromium`） |
+| oschina | `CSPUB_OSCHINA_COOKIE`（+ 可选 `CSPUB_OSCHINA_USER_ID/CATALOG/PRIVACY`） | `oschinaCookie` 等 | 登录 oschina.net → F12 → 复制 Cookie 整串（须含 `oscid`）。**图片直接用它自带图床**（`oscimg.oschina.net`），无需额外配置；分类默认按 front-matter `categories` 名匹配，匹配不到取账号第一个分类 |
+| 掘金图片（可选） | `CSPUB_ATOMGIT_TOKEN`（+ `CSPUB_ATOMGIT_REPO/BRANCH/DIR`） | `atomgitToken` 等 | AtomGit 个人访问令牌；默认仓库 `qq8864/images`、分支 `main`、目录 `cspub`。配了它本地图上传图床、正文嵌 raw 外链，不依赖浏览器 |
 
 配置文件：`~/.cspub/config.json`（`chmod 600`），例：
 `{"csdnCookie": "...", "zhihuCookie": "...", "baijiahaoCookie": "..."}`
@@ -138,6 +141,48 @@ CSDN 对站外图有防盗链（典型形状：`<img>` 直连返回 **HTTP 200 +
 **这条链路的坑（值得记一笔）**：图床签名响应里 `customParam.isAudit` 是 **JSON 数字**，用只认字符串的
 `jsonStr` 去取会得空串；把空的 `x:isAudit` 发给华为 OBS，OBS 回的是 **HTTP 200 + 0 字节**——看起来像
 "被网关吞了"，实际是回调拿不到字段。改法是 `jsonScalar`：按 JsonKind 分别取字符串/数字/布尔字面量。
+
+### 掘金：外链优先（AtomGit 图床）
+
+掘金**接受外链图片**（实测 API 建草稿后外链图 `naturalWidth>0`，示例文章
+[juejin.cn/post/7704394460696461350](https://juejin.cn/post/7704394460696461350) 正文图片就全在 AtomGit 仓库上），
+所以不必把图搬进掘金图床。配了 `CSPUB_ATOMGIT_TOKEN` 时，`--platform juejin` 的图片走：
+
+1. 本地图逐张 `POST` 到 AtomGit 仓库 `contents` 接口（base64 内容 + 提交说明 + 分支）；
+2. 正文回写 `https://atomgit.com/api/v5/repos/<owner>/<repo>/raw/<path>?ref=<branch>`；
+3. 已是 `http(s):` 的外链原样保留；上传失败的图降级浏览器通道（`scripts/juejin_upload.py`）→ 内置 ImageX
+   → 都失败则保留原引用并提示，**不阻断发文**。
+
+好处是整条图片链路不再依赖 `python3 + playwright + chromium`。外链地址匿名可直取（实测 `HTTP 200` + `image/jpeg`）。
+
+### 开源中国：先用它自带图床
+
+开源中国浏览器编辑器上传图片走 `POST /oschinapi/upload/img`（multipart 字段 `file`，**只要登录 Cookie**），
+返回 `https://oscimg.oschina.net/.../up-<md5>.png` 直链，实测 2MB 图片单请求即可（分片接口 `upload/init` 是给大文件用的）。
+所以 `--platform oschina` 的图片优先级是：
+
+1. 平台自带图床（无需额外配置，有 Cookie 就行）；
+2. 失败的本地图再用 AtomGit 外链兜底（配了 `CSPUB_ATOMGIT_TOKEN` 才启用）；
+3. 仍失败保留原引用并提示，**不阻断发文**。
+
+> 直链里夹着 `//null/` 一段（服务端未用的桶位），链接本身有效：浏览器 UA 取回 `HTTP 200` 且字节与源图一致；
+> 裸 `curl` 无 UA 会被 CDN 403（146 字节 `TLB` 页），别据此误判成死链。
+
+### 开源中国：正式发布的三个实测特性
+
+真机跑过一篇（cj-tauri 观影应用实战，3 张本地图），结论如下，**发之前值得知道**：
+
+1. **正文提交 Markdown，服务端存 HTML**：请求体 `contentType: 1` + 原始 Markdown，但 `blog/detail` 回读到的
+   `content` 已经是 `<h2>/<p>` 渲染结果——不要自己预渲染 HTML，会双重转换。
+2. **tags 由平台自动提取**：front-matter 里写的标签不生效，服务端按正文关键词自己抽
+   （实测被抽成 `tauri,json,https,examples,image,...`）。分类则尊重 `catalog`（按名字匹配或取第一个）。
+3. **文章 URL 是 `/blog/{id}`**，不是 `/u/{userId}/blog/{id}`（后者服务端直接 404）。但注意 SPA 外壳：
+   该路由对**不存在的 id 也回 200 + 同一个 3730 字节外壳**，所以 `curl` 状态码**不能**用来判断文章是否可见。
+   判活必须浏览器渲染（看 h1/正文长度）或查询 `blog/detail` 接口。
+
+> ⚠️ **发布成功 ≠ 立刻公开**：实测发布接口返回博客 id 后，`blog/detail` 能读到完整正文与图片，但公开页面
+> 渲染为「找不到您访问的页面」。新号/首篇大概率走**人工审核**，请过一段时间再确认；不要因为接口回了 id
+> 就认定已经上线。
 
 ## front-matter
 

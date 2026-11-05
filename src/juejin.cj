@@ -618,20 +618,50 @@ func uploadJuejinImageOnce(cookie: String, uuid: String, data: Array<Byte>, inse
 
 /** 掘金正文图片转存：本地图 → 掘金图床 → 回写正式 URL（从后往前替换不挪位）。
  * 外链 http(s) 保留原样；失败保留原链接并提示（best-effort，不阻断发文）。
- * 优先走伴生脚本 scripts/juejin_upload.py（Python ImageX 五步链，实测稳定——仓颉纯
- * HTTP 实现签名与 Python 逐字节一致但被网关间歇性拒绝，见 CHANGELOG 踩坑）；
- * 脚本缺失时降级仓颉 ImageX 实现。 */
-public func rehostJuejinImages(cookie: String, uuid: String, md: String, insecure: Bool): String {
+ * 上传通道按优先级三级：
+ *   ① AtomGit 外链（配置了 CSPUB_ATOMGIT_TOKEN 时）：本地图落仓库，正文嵌 raw 外链。
+ *      掘金认外链图片（实测 API 建草稿后外链图 naturalWidth>0），不依赖浏览器；
+ *   ② 伴生脚本 scripts/juejin_upload.py（Python 浏览器通道 ImageX，实测稳定）；
+ *   ③ 仓颉内置 ImageX 实现（脚本缺失时兜底）。
+ * ① 里上传失败的图会自动往 ②③ 降级，不丢图。 */
+public func rehostJuejinImages(cookie: String, uuid: String, md: String, insecure: Bool,
+    atomgitToken: String, atomgitRepo: String, atomgitBranch: String, atomgitDir: String): String {
     let imgs = findExternalImages(md)
-    var localPaths: ArrayList<String> = ArrayList<String>()
+    var remain: ArrayList<String> = ArrayList<String>()
     for (img in imgs) {
         let src = img.url
         if (!src.startsWith("http://") && !src.startsWith("https://") && !src.startsWith("data:")) {
-            localPaths.add(src)
+            remain.add(src)
         }
     }
-    // 伴生脚本可用：一次调用批量上传所有本地图，拿回路径→URL 映射
     var urlMap: ArrayList<StrKV> = ArrayList<StrKV>()
+    // ① 外链优先：本地图上传 AtomGit，拿 raw 外链直接嵌正文
+    if (atomgitToken.size > 0 && remain.size > 0) {
+        println("掘金：外链优先——本地图上传 AtomGit（${atomgitRepo}）…")
+        var fallback: ArrayList<String> = ArrayList<String>()
+        for (p in remain) {
+            let data = try { readImageBytes(p) } catch (e: Exception) {
+                let _ = e
+                Array<Byte>(0, repeat: 0)
+            }
+            var u = ""
+            if (data.size > 0) {
+                let path = atomgitImagePath(atomgitDir, randomHex(12), extOf(p))
+                u = uploadImageAtomGit(atomgitToken, atomgitRepo, path, atomgitBranch, data, insecure)
+            }
+            if (u.size > 0) {
+                urlMap.add(StrKV(p, u))
+            } else {
+                fallback.add(p)
+            }
+        }
+        if (urlMap.size > 0) {
+            println("掘金：外链就绪 ${urlMap.size}/${remain.size} 张")
+        }
+        remain = fallback
+    }
+    let localPaths = remain
+    // 伴生脚本可用：一次调用批量上传所有本地图，拿回路径→URL 映射
     let scriptPath = "scripts/juejin_upload.py"
     let probe = try { readTextFileAll(scriptPath) } catch (e: Exception) {
         let _ = e
@@ -739,7 +769,8 @@ public func rehostJuejinImages(cookie: String, uuid: String, md: String, insecur
  * categoryId 未配置时自动拉分类列表：优先按 front-matter 分类名匹配，匹配不到取第一个
  * （掘金发布强制至少一个分类，err_no=1002）。 */
 public func publishToJuejin(cookie: String, uuid: String, categoryId: String, tagIds: Array<String>,
-    a: Article, publishNow: Bool, insecure: Bool): Int64 {
+    a: Article, publishNow: Bool, insecure: Bool, atomgitToken: String, atomgitRepo: String,
+    atomgitBranch: String, atomgitDir: String): Int64 {
 
     // uuid：掘金 api query 参数（imagex 链路实测需要，缺了报「请求路由不存在」）；
     // 未配置时用 19 位数字占位常量（探针实测可用，不影响鉴权——鉴权只看 Cookie）
@@ -783,9 +814,10 @@ public func publishToJuejin(cookie: String, uuid: String, categoryId: String, ta
         println("错误：Cookie 里没有 sessionid——要浏览器登录 juejin.cn 后复制的整串 Cookie")
         return 1
     }
-    // 图片转存（发文前）：掘金把相对路径渲染成 juejin.cn/<路径> 死链，本地图必须上传 ImageX。
+    // 图片转存（发文前）：掘金把相对路径渲染成 juejin.cn/<路径> 死链，本地图必须转成可用链接。
     // best-effort：单张失败保留原引用并提示，不阻断发文。
-    let bodyMd = rehostJuejinImages(cookie, jjUuid, a.body, insecure)
+    let bodyMd = rehostJuejinImages(cookie, jjUuid, a.body, insecure,
+        atomgitToken, atomgitRepo, atomgitBranch, atomgitDir)
     let brief = normalizeJuejinBrief(a.desc, a.body)
     // 标题 ≤80 字（按字符数截断）
     var title = a.title
