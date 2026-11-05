@@ -4,3 +4,4 @@ cjpm.lock
 dist/
 baijiahao_result.png
 __pycache__/
+.atomcode/

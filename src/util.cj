@@ -2,6 +2,7 @@
 package cspub
 
 import std.collection.*
+import std.env.*
 import std.fs.*
 import std.random.*
 import stdx.crypto.common.*
@@ -204,4 +205,109 @@ public func execRequest(req: HttpRequest, insecure: Bool): HttpResp {
     } finally {
         client.close()
     }
+}
+
+/** 路径最后一段（"a/b/c.py" → "c.py"；无分隔符原样返回）。手写而非依赖 fs，Windows 的 '\' 一并认。 */
+func pathBaseName(p: String): String {
+    let b = p.toArray()
+    var i = Int64(b.size) - 1
+    while (i >= 0) {
+        if (b[i] == UInt8(47) || b[i] == UInt8(92)) {
+            return String.fromUtf8(b[i + 1..b.size])
+        }
+        i--
+    }
+    return p
+}
+
+/** 父目录（"a/b/c" → "a/b"；根 "/" 返回自身；无分隔符返回空串） */
+func pathParentDir(p: String): String {
+    let b = p.toArray()
+    var i = Int64(b.size) - 1
+    while (i >= 0) {
+        if (b[i] == UInt8(47) || b[i] == UInt8(92)) {
+            if (i == 0) {
+                return String.fromUtf8(b[0..1])
+            }
+            return String.fromUtf8(b[0..i])
+        }
+        i--
+    }
+    return ""
+}
+
+/** 拼路径：a 已以分隔符结尾则不重复加 */
+func pathJoin(a: String, b: String): String {
+    if (a.size == 0) {
+        return b
+    }
+    if (b.size == 0) {
+        return a
+    }
+    let last = a.toArray()[a.size - 1]
+    if (last == UInt8(47) || last == UInt8(92)) {
+        return a + b
+    }
+    return a + "/" + b
+}
+
+/** 伴生脚本候选路径（纯函数，单测覆盖），优先级：
+ * ① CSPUB_SCRIPT_DIR 显式指定 ② 当前工作目录 ③ 可执行文件目录起向上回溯 5 级。
+ * 有了 ③，从文章目录或任意目录运行也能找到仓库里的 scripts/。 */
+public func scriptCandidates(rel: String, scriptDirEnv: String, exeDir: String): Array<String> {
+    let list = ArrayList<String>()
+    let base = pathBaseName(rel)
+    let envDir = trimAscii(scriptDirEnv)
+    if (envDir.size > 0) {
+        list.add(pathJoin(envDir, base))
+    }
+    list.add(rel)
+    var d = exeDir
+    var depth: Int64 = 0
+    while (d.size > 0 && depth < 5) {
+        list.add(pathJoin(pathJoin(d, "scripts"), base))
+        let up = pathParentDir(d)
+        if (up.size == 0 || up == d) {
+            break
+        }
+        d = up
+        depth++
+    }
+    return list.toArray()
+}
+
+/** 当前可执行文件所在目录；取不到返回空串（非 Linux 无 /proc 时只走前两个候选）。
+ * canonicalize 解析 /proc/self/exe 的符号链接，不依赖 argv[0]。 */
+public func executableDir(): String {
+    let exePath = try {
+        canonicalize("/proc/self/exe").toString()
+    } catch (e: Exception) {
+        let _ = e
+        ""
+    }
+    if (exePath.size == 0) {
+        return ""
+    }
+    return pathParentDir(exePath)
+}
+
+/** 定位伴生脚本：返回第一个可读路径，都不可读返回空串（调用方据此给「怎么修」的报错）。 */
+public func resolveCompanionScript(rel: String): String {
+    var envDir = ""
+    match (getVariable("CSPUB_SCRIPT_DIR")) {
+        case Some(v) => envDir = v
+        case None => ()
+    }
+    for (cand in scriptCandidates(rel, envDir, executableDir())) {
+        let probe = try {
+            readTextFileAll(cand)
+        } catch (e: Exception) {
+            let _ = e
+            ""
+        }
+        if (probe.size > 0) {
+            return cand
+        }
+    }
+    return ""
 }

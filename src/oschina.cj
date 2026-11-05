@@ -399,8 +399,8 @@ public func publishToOschina(cookie: String, userIdCfg: String, catalogCfg: Stri
         body = b2
         println("图片（AtomGit 兜底）：成功 ${ok2}，失败 ${fail2}")
     }
-    if (hasLocalImages(body)) {
-        println("⚠ 仍有本地图片没转存成功，开源中国页面上会显示死链")
+    if (imagesRemainGate("oschina", body, strictImagesEnabled())) {
+        return 1
     }
 
     let title = oschinaTitleOrDefault(a.title, body)

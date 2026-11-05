@@ -73,6 +73,8 @@ cjpm build
 | juejin | `CSPUB_JUEJIN_COOKIE`（+ 可选 `CSPUB_JUEJIN_UUID/CATEGORY_ID/TAG_IDS`） | `juejinCookie` 等 | 登录 juejin.cn → F12 → 复制 Cookie 整串（须含 `sessionid`）；分类/标签用后台抓包的内部 ID（可选）。正文图片**外链优先**：配了 `CSPUB_ATOMGIT_TOKEN` 就走 AtomGit 图床，否则降级浏览器通道（需 `pip install playwright && playwright install chromium`） |
 | oschina | `CSPUB_OSCHINA_COOKIE`（+ 可选 `CSPUB_OSCHINA_USER_ID/CATALOG/PRIVACY`） | `oschinaCookie` 等 | 登录 oschina.net → F12 → 复制 Cookie 整串（须含 `oscid`）。**图片直接用它自带图床**（`oscimg.oschina.net`），无需额外配置；分类默认按 front-matter `categories` 名匹配，匹配不到取账号第一个分类 |
 | 掘金图片（可选） | `CSPUB_ATOMGIT_TOKEN`（+ `CSPUB_ATOMGIT_REPO/BRANCH/DIR`） | `atomgitToken` 等 | AtomGit 个人访问令牌；默认仓库 `qq8864/images`、分支 `main`、目录 `cspub`。配了它本地图上传图床、正文嵌 raw 外链，不依赖浏览器 |
+| 图片门禁（可选） | `CSPUB_STRICT_IMAGES` | — | 设 `1/true/yes` 时，转存后正文仍有本地图片未转存就**中止发布**（返回码 1）；默认不设＝best-effort，只打 `⚠⚠` 告警照发 |
+| 伴生脚本目录（可选） | `CSPUB_SCRIPT_DIR` | — | 百家号/掘金的 `scripts/*.py` 查找根。不设时依次找：当前工作目录 → 可执行文件目录向上回溯 5 级，所以**不再要求必须在仓库根目录运行** |
 
 配置文件：`~/.cspub/config.json`（`chmod 600`），例：
 `{"csdnCookie": "...", "zhihuCookie": "...", "baijiahaoCookie": "..."}`

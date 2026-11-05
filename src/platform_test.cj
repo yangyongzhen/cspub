@@ -454,11 +454,66 @@ func oschinaTitleAndUrlTest(): Unit {
 }
 
 @Test
-func oschinaLocalImageDetectTest(): Unit {
-    // 只有外链/data 时不需要提示丢失；有本地路径才提示
-    @Assert(hasLocalImages("![a](https://x/y.png)"), false)
-    @Assert(hasLocalImages("![a](data:image/png;base64,AAA)"), false)
-    @Assert(hasLocalImages("![a](/tmp/a.png)"), true)
-    @Assert(hasLocalImages("![a](https://x/y.png)\n![b](imgs/c.png)"), true)
-    @Assert(hasLocalImages("没有图片"), false)
+func imagePreviewActionTest(): Unit {
+    // 本地绝对路径：publish 时会读文件上传，标 skip 会让人误判「这张图不会转存」
+    @Assert(imgPreviewAction("/tmp/a.png"), "upload (local file)")
+    @Assert(imgPreviewAction("/root/test/cj/cj-tauri/docs/images/architecture.png"), "upload (local file)")
+    // 站外图 → 转存
+    @Assert(imgPreviewAction("https://example.com/a.png"), "rehost")
+    // 已在 CSDN 图床 → 跳过（转存无意义）
+    @Assert(imgPreviewAction("https://img-blog.csdnimg.cn/abc.png"), "skip (already csdn)")
+    // data: 等原样保留
+    @Assert(imgPreviewAction("data:image/png;base64,AAA"), "skip (not http)")
+    // 非公网图源 → 拦截
+    @Assert(imgPreviewAction("http://127.0.0.1/a.png"), "BLOCKED (non-public)")
+}
+
+@Test
+func localImageCountAndGateTest(): Unit {
+    @Assert(localImageCount("没有图片"), 0)
+    // 原 hasLocalImages 的用例（只有外链/data 不需要提示；有本地路径才提示）
+    @Assert(localImageCount("![a](https://x/y.png)"), 0)
+    @Assert(localImageCount("![a](data:image/png;base64,AAA)"), 0)
+    @Assert(localImageCount("![a](/tmp/a.png)"), 1)
+    @Assert(localImageCount("![a](https://x/y.png)\n![b](imgs/c.png)"), 1)
+    @Assert(localImageCount("![a](https://x/y.png)\n![b](data:image/png;base64,AA)"), 0)
+    @Assert(localImageCount("![a](/tmp/a.png)\n![b](imgs/c.png)\n![c](https://x/y.png)"), 2)
+    // 无本地图残留：不告警，strict 也不中止
+    @Assert(imagesRemainGate("csdn", "![a](https://x/y.png)", true), false)
+    // 有残留 + best-effort：只告警（AGENTS：单张失败不阻断发文）
+    @Assert(imagesRemainGate("juejin", "![a](/tmp/a.png)", false), false)
+    // 有残留 + 严格模式：中止（避免静默发出死链文）
+    @Assert(imagesRemainGate("juejin", "![a](/tmp/a.png)", true), true)
+}
+
+@Test
+func companionScriptPathTest(): Unit {
+    @Assert(pathBaseName("scripts/x.py"), "x.py")
+    @Assert(pathBaseName("x.py"), "x.py")
+    @Assert(pathBaseName("a\\b\\x.py"), "x.py")
+    @Assert(pathParentDir("/repo/target/release/bin"), "/repo/target/release")
+    @Assert(pathParentDir("/repo"), "/")
+    @Assert(pathParentDir("x.py"), "")
+    @Assert(pathJoin("/repo", "scripts/x.py"), "/repo/scripts/x.py")
+    @Assert(pathJoin("/repo/", "x.py"), "/repo/x.py")
+    @Assert(pathJoin("", "x.py"), "x.py")
+    // 只有相对路径：当前目录一个候选
+    let c0 = scriptCandidates("scripts/x.py", "", "")
+    @Assert(c0.size, 1)
+    @Assert(c0[0], "scripts/x.py")
+    // 配了 CSPUB_SCRIPT_DIR：显式目录排第一
+    let c1 = scriptCandidates("scripts/x.py", "/repo", "")
+    @Assert(c1.size, 2)
+    @Assert(c1[0], "/repo/x.py")
+    @Assert(c1[1], "scripts/x.py")
+    // 可执行文件在仓库内（target/release/bin）：向上回溯能找到仓库根的 scripts/
+    let c2 = scriptCandidates("scripts/x.py", "", "/repo/target/release/bin")
+    var foundRepoRoot = false
+    for (p in c2) {
+        if (p == "/repo/scripts/x.py") {
+            foundRepoRoot = true
+        }
+    }
+    @Assert(foundRepoRoot, true)
+    @Assert(c2.size > 3, true)
 }

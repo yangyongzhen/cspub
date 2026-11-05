@@ -96,6 +96,9 @@ public func publishToZhihu(cookie: String, a: Article, publishNow: Bool, insecur
     // 图片转存（发文前）：知乎保存时剥离非 zhimg.com 图源，站外图/本地图必须先进知乎 CDN。
     // best-effort：单张失败保留原链接并提示，不阻断发文。
     let bodyMd = rehostImagesZhihu(cookie, xsrf, a.body, insecure)
+    if (imagesRemainGate("zhihu", bodyMd, strictImagesEnabled())) {
+        return 1
+    }
     let html = mdToHtml(bodyMd)
 
     // ① 建空草稿

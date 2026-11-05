@@ -62,14 +62,7 @@ main(args: Array<String>): Int64 {
         }
         for (m in imgs) {
             let host = hostOf(m.url)
-            var action = "rehost"
-            if (isCsdnImageHost(host)) {
-                action = "skip (already csdn)"
-            } else if (!m.url.startsWith("http://") && !m.url.startsWith("https://")) {
-                action = "skip (not http)"
-            } else if (isBlockedHost(host)) {
-                action = "BLOCKED (non-public)"
-            }
+            let action = imgPreviewAction(m.url)
             println("[${action}] ${host} ${m.url}")
         }
         return 0
@@ -127,7 +120,7 @@ main(args: Array<String>): Int64 {
 }
 
 func usage(): Unit {
-    println("cspub v0.2.4 — 多平台自动发文 CLI（仓颉实现）：csdn / zhihu / baijiahao / cnblogs / juejin / oschina")
+    println("cspub v0.2.6 — 多平台自动发文 CLI（仓颉实现）：csdn / zhihu / baijiahao / cnblogs / juejin / oschina")
     println("")
     println("用法:")
     println("  cspub check   <文章.md>            解析 front-matter + 渲染统计（不联网）")
@@ -151,6 +144,8 @@ func usage(): Unit {
     println("  图片外链:  CSPUB_ATOMGIT_TOKEN（+可选 CSPUB_ATOMGIT_REPO/BRANCH/DIR，默认 ${"qq8864/images"} main cspub）")
     println("             配了令牌则本地图上传 AtomGit 仓库、正文嵌 raw 外链（掘金认外链，不依赖浏览器）")
     println("             （正文图片转存走浏览器通道，需 python3+playwright+chromium）")
+    println("  图片门禁:  CSPUB_STRICT_IMAGES=1 —— 正文仍有本地图片未转存就中止发布（默认 best-effort 照发）")
+    println("  伴生脚本:  CSPUB_SCRIPT_DIR=<cspub 仓库根>（默认依次找 当前目录 / 可执行文件目录向上 5 级）")
     println("front-matter: title(必填) / tags(逗号分隔,最多5) / categories / desc / draft(true|false)")
     println("              / origin_url（baijiahao 必填：原文地址/首发链接）")
 }
@@ -500,6 +495,9 @@ func cmdPublish(args: Array<String>, startIdx: Int64): Int64 {
     a2.desc = a.desc
     a2.draft = a.draft
     a2.body = rehostImages(cookie, a.body, insecure)
+    if (imagesRemainGate("csdn", a2.body, strictImagesEnabled())) {
+        return 1
+    }
     let mode = if (publishNow) { "publish" } else { "draft" }
     if (insecure) {
         println("⚠ --insecure：跳过 TLS 证书校验（自担风险；仅诊断用）")

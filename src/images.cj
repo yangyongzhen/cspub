@@ -573,6 +573,66 @@ public func uploadImage(cookie: String, img: Array<Byte>, ext: String, insecure:
     return imageUrl
 }
 
+/** `imgs` 预演的处置标签（纯函数，单测覆盖）。
+ * 本地绝对路径在 publish 时会被读文件上传（rehostImages 的 `/` 分支），
+ * 所以不能标成 skip——那会让人误判「这张图不会转存」。 */
+public func imgPreviewAction(url: String): String {
+    let host = hostOf(url)
+    if (isCsdnImageHost(host)) {
+        return "skip (already csdn)"
+    }
+    if (!url.startsWith("http://") && !url.startsWith("https://")) {
+        if (url.startsWith("/")) {
+            return "upload (local file)"
+        }
+        return "skip (not http)"
+    }
+    if (isBlockedHost(host)) {
+        return "BLOCKED (non-public)"
+    }
+    return "rehost"
+}
+
+/** 正文里残留的本地图片张数（非 http、非 data:）——转存收尾仍有残留＝页面上是死链 */
+public func localImageCount(md: String): Int64 {
+    var n: Int64 = 0
+    for (img in findExternalImages(md)) {
+        let src = img.url
+        if (!src.startsWith("http://") && !src.startsWith("https://") && !src.startsWith("data:")) {
+            n++
+        }
+    }
+    return n
+}
+
+/** 严格图片门禁：CSPUB_STRICT_IMAGES=1/true/yes 时，图片没转存成功就中止发布。
+ * 默认不是严格模式——单张失败照发（AGENTS：图片 best-effort 不阻断发文）。 */
+public func strictImagesEnabled(): Bool {
+    match (getVariable("CSPUB_STRICT_IMAGES")) {
+        case Some(v) =>
+            let t = trimAscii(v)
+            return t == "1" || t == "true" || t == "yes"
+        case None => return false
+    }
+}
+
+/** 图片转存收口：残留本地图片时打醒目告警（现状：全失败也只打一行「失败 N」，文章照发成死链）。
+ * 返回 true＝调用方应中止发布（仅 strict 时），false＝best-effort 继续。
+ * strict 由调用方传 strictImagesEnabled()，让本函数保持纯逻辑、可单测。 */
+public func imagesRemainGate(platform: String, md: String, strict: Bool): Bool {
+    let n = localImageCount(md)
+    if (n <= 0) {
+        return false
+    }
+    println("⚠⚠ 图片未转存成功：正文仍有 ${n} 张本地图片（${platform}），发布后这些图是死链/裂图")
+    println("     排查：图床凭证过期？掘金/知乎建议配 CSPUB_ATOMGIT_TOKEN 走外链；ImageX 签名失配见 docs 踩坑记录")
+    if (strict) {
+        println("     已按 CSPUB_STRICT_IMAGES 中止发布；去掉该环境变量即按 best-effort 继续")
+        return true
+    }
+    return false
+}
+
 /** 把 Markdown 里的站外图全部转存到 CSDN 图床并回写 URL（从后往前替换，偏移不挪位）。
  * best-effort：单张失败保留原链接并提示，不阻断发文。 */
 public func rehostImages(cookie: String, md: String, insecure: Bool): String {

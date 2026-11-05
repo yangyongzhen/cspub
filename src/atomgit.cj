@@ -98,17 +98,6 @@ public func parseAtomgitCommitSha(respText: String): String {
     return ""
 }
 
-/** 正文里是否有本地图片引用（非 http(s)/data）——决定要不要提示「没配令牌会死链」 */
-public func hasLocalImages(md: String): Bool {
-    for (img in findExternalImages(md)) {
-        let src = img.url
-        if (!src.startsWith("http://") && !src.startsWith("https://") && !src.startsWith("data:")) {
-            return true
-        }
-    }
-    return false
-}
-
 /** 把正文里的本地图片批量上传 AtomGit 并回写成 raw 外链。
  * 返回 (新正文, 成功数, 失败数)；已是外链的引用原样保留。
  * 失败不抛异常、不改原引用——调用方可据此决定降级到平台图床还是仅提示（best-effort）。 */

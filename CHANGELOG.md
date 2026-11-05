@@ -2,6 +2,44 @@
 
 cspub 版本变更记录。版本号规则沿用 cjh：重大更新递增中间位，小更新递增末位；版本号单一真相在 `cjpm.toml` 的 `version` 字段。每条变更须带验证证据（实测输出、错误码、转存结果），不写没有证据的条目。
 
+## [v0.2.6] - 2026-11-05
+
+修掉三处「静默骗人」的缺陷：图片全失败照发死链、`imgs` 预演把要上传的本地图报成 skip、伴生脚本只有站在仓库根目录才找得到。
+
+### 修复
+
+- **图片全失败不再静默照发**：新增收口门禁 `imagesRemainGate`（`src/images.cj`），csdn / zhihu / juejin / oschina
+  四个平台转存后统一判定——正文仍残留本地图片就醒目告警（写清后果与排查方向）；配
+  `CSPUB_STRICT_IMAGES=1/true/yes` 时直接中止发布（默认仍是 best-effort 照发，不改既有语义）。
+  掘金死链事故（`7704603488899366939`，5/5 图失败仍发出）正是这条缺口的产物。
+- **`imgs` 预演不再把本地图报成 `skip (not http)`**：`rehostImages` 的 `/` 分支实际会读文件上传，
+  旧标签会让人误判「这张图不会转存」。抽成纯函数 `imgPreviewAction`，本地绝对路径标
+  `upload (local file)`。
+- **伴生脚本寻径回退**：`scripts/*.py` 原先硬编码相对路径，只有 cspub 仓库根目录能命中
+  （百家号曾因此直接报「须在仓库根目录下运行」而失败）。新增 `resolveCompanionScript`（`src/util.cj`）
+  按 `CSPUB_SCRIPT_DIR` → 当前目录 → **可执行文件目录向上回溯 5 级** 查找；百家号、掘金两处调用点同步改用。
+
+### 变更
+
+- `hasLocalImages` 由 `localImageCount` 取代（门禁要张数不要布尔），其单测用例迁入新测试，用例不丢。
+- 帮助文本补 `CSPUB_STRICT_IMAGES` / `CSPUB_SCRIPT_DIR`；CLI 版本回显修正到与 `cjpm.toml` 一致（原为 v0.2.4）。
+
+### 测试
+
+- `cjpm test` **34 个用例全绿**，新增 `imagePreviewActionTest` / `localImageCountAndGateTest` /
+  `companionScriptPathTest`；`cjpm clean && cjpm build` **零警告**。
+
+### 验证（真机铁证）
+
+- **缺陷 2**：`cspub imgs AI时代为什么推荐cj-tauri开发桌面应用.md` 五张本地图全部输出
+  `[upload (local file)]`（旧版全部 `skip (not http)`）。
+- **缺陷 3**：从**非仓库目录** `/root/test/cj` 执行 `publish … --platform juejin`——旧版此场景找不到
+  `scripts/juejin_upload.py`，降级内置 ImageX 会 5 张全失败并发出死链；现靠可执行文件目录回溯命中脚本，
+  输出「图片转存：5 张待转，成功 5，失败 0」，建草稿成功 `7704528634183122971`。
+- **缺陷 1**：`CSPUB_STRICT_IMAGES=1` + 一张不存在的本地图 → 输出
+  `⚠⚠ 图片未转存成功：正文仍有 1 张本地图片（juejin）… 已按 CSPUB_STRICT_IMAGES 中止发布`，
+  进程 `exit=1` 且**未创建草稿**（旧版会照发一篇死链文）。
+
 ## [v0.2.5] - 2026-11-05
 
 开源中国 `--live` 正式发布实跑，修掉一处把文章地址拼错的 bug，并记录三条「发布成功≠立刻公开」的平台特性。

@@ -662,16 +662,12 @@ public func rehostJuejinImages(cookie: String, uuid: String, md: String, insecur
     }
     let localPaths = remain
     // 伴生脚本可用：一次调用批量上传所有本地图，拿回路径→URL 映射
-    let scriptPath = "scripts/juejin_upload.py"
-    let probe = try { readTextFileAll(scriptPath) } catch (e: Exception) {
-        let _ = e
-        ""
-    }
-    if (probe.size > 0 && localPaths.size > 0) {
+    let scriptPath = resolveCompanionScript("scripts/juejin_upload.py")
+    if (scriptPath.size > 0 && localPaths.size > 0) {
         let tmpCookie = "/tmp/cspub_juejin_${randomHex(8)}.cookie"
         let tmpMap = "/tmp/cspub_juejin_${randomHex(8)}.map.json"
         var argv: ArrayList<String> = ArrayList<String>()
-        argv.add("scripts/juejin_upload.py")
+        argv.add(scriptPath)
         argv.add("--cookie-file")
         argv.add(tmpCookie)
         argv.add("--map-file")
@@ -818,6 +814,9 @@ public func publishToJuejin(cookie: String, uuid: String, categoryId: String, ta
     // best-effort：单张失败保留原引用并提示，不阻断发文。
     let bodyMd = rehostJuejinImages(cookie, jjUuid, a.body, insecure,
         atomgitToken, atomgitRepo, atomgitBranch, atomgitDir)
+    if (imagesRemainGate("juejin", bodyMd, strictImagesEnabled())) {
+        return 1
+    }
     let brief = normalizeJuejinBrief(a.desc, a.body)
     // 标题 ≤80 字（按字符数截断）
     var title = a.title

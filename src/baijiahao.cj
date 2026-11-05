@@ -97,14 +97,12 @@ public func parseBjhResp(respText: String): (Int64, String, String) {
  * 脚本发文（scripts/baijiahao_publish.py，宿主机需 python3 + playwright + chromium）。
  * 凭证经临时文件传递（用完即删），避免经 argv/ps 泄露。 */
 public func publishToBaijiahaoCookie(cookie: String, a: Article, publishNow: Bool): Int64 {
-    let scriptPath = "scripts/baijiahao_publish.py"
-    // 伴生脚本就位检查（相对路径按当前工作目录解析）
-    let probe = try { readTextFileAll(scriptPath) } catch (e: Exception) {
-        let _ = e
-        ""
-    }
-    if (probe.size == 0) {
-        println("错误：找不到伴生脚本 ${scriptPath}（须在 cspub 仓库根目录下运行）")
+    // 伴生脚本就位检查：CSPUB_SCRIPT_DIR → 当前目录 → 可执行文件目录向上回溯（util.cj 统一实现）
+    let scriptPath = resolveCompanionScript("scripts/baijiahao_publish.py")
+    if (scriptPath.size == 0) {
+        println("错误：找不到伴生脚本 scripts/baijiahao_publish.py")
+        println("     已查找：CSPUB_SCRIPT_DIR / 当前工作目录 / 可执行文件目录向上 5 级")
+        println("     修复：cd 到 cspub 仓库根目录再跑，或 export CSPUB_SCRIPT_DIR=<仓库根>")
         return 1
     }
     // 写正文 HTML 与 Cookie 临时文件（File.create 对已存在文件抛异常，先删）
