@@ -2,6 +2,23 @@
 
 cspub 版本变更记录。版本号规则沿用 cjh：重大更新递增中间位，小更新递增末位；版本号单一真相在 `cjpm.toml` 的 `version` 字段。每条变更须带验证证据（实测输出、错误码、转存结果），不写没有证据的条目。
 
+## [v0.2.2] - 2026-11-05
+
+新增掘金平台（Cookie 两步流，纯 HTTP 零浏览器）。
+
+### 新增
+
+- **掘金图片自动转存（浏览器通道，尽力而为）**：掘金把正文相对路径图片渲染成 `juejin.cn/<路径>` 死链，`--platform juejin` 发文前自动把本地图转存到掘金图床并回写真实 CDN 地址。通道选型：**主通道 = Python 伴生脚本 `scripts/juejin_upload.py` 驱动的真实浏览器上传**（playwright 打开掘金编辑器 → file input 上传 → 拦 `get_img_url` 响应取 `main_url`），拿到的正是编辑器自己会写进正文的同一条地址；副通道 = 仓颉内置 `uploadJuejinImage`（纯 HTTP ImageX 五步链：gen_token → ApplyImageUpload(AWS SigV4) → CRC32 直传 → Commit(best-effort) → get_img_url）作脚本缺失时兜底。单张失败保留原链接并提示，不阻断发文。
+  **为什么放弃直调签名（根因铁证，2026-11-05）**：浏览器抓包显示真实 ApplyImageUpload 的 `SignedHeaders` 只有 `x-amz-date;x-amz-security-token`（不含 `host`），query 原序为 `Action,Version,ServiceId`；照抄该组合重放（含字母序/原序、有无 host、GET/POST、签不签 content-sha256、sk 是否 base64 解码、火山原生 HMAC-SHA256 等 10+ 变体）**全部仍被回 `SignatureDoesNotMatch`**，而同一时刻浏览器上传一次成功 → 网关按客户端 TLS 指纹而非签名内容校验。另：`scope` 用令牌内 `LTAccessKeyId` 会改报 `CheckAuthenticationError`，用 `AccessKeyId` 才走到签名比对，说明 AK 本身正确。
+  **真机验证**：`publish /tmp/jj_test.md --platform juejin --insecure` 输出「图片转存：1 张待转，成功 1，失败 0」→ 草稿 `7704480304496853043`；浏览器打开该草稿取证，正文图片 `loaded=True 1770x840`，src 为 `p0-xtjj-private.juejin.cn/tos-cn-i-73owjymdk6/...awebp?...`，正文采样为 `![流程图](https://p0-xtjj-private...awebp?policy=...)` → 图片真实渲染，链路打通。
+  **注意**：该 CDN 地址对 `curl` 直连返回 403（边缘节点拦非浏览器客户端，`TLB` 页），属防盗链正常行为，不代表图片坏——须以浏览器内 `naturalWidth>0` 判定。代码：`src/juejin.cj` + `scripts/juejin_upload.py`（依赖 python3 + playwright + chromium）。
+- **`publish --platform juejin`（见上）**：走 `api.juejin.cn` 两步流——①POST `/content_api/v1/article_draft/create`（`edit_type:10` Markdown 模式）→ draft_id → ②POST `/content_api/v1/article/publish {draft_id}` → article_id → `https://juejin.cn/post/<id>`。写接口实测无需反爬签名（`article/detail` 等读接口才要 msToken+a_bogus）。判成功只看 `err_no==0`（社区实测 `err_msg` 可能恒为 "success"）。坑点处理：`brief_content` 硬性 50-100 字（`normalizeJuejinBrief` 从 front-matter desc 取、不足从正文剥文本补齐）；`category_id` 必须字符串；发布强制至少一个分类与标签（err_no=1002/1003）——未配置时自动拉 `/tag_api/v1/query_category_list`（读接口免签名），分类按 front-matter 名称匹配、标签取所选分类的 `hot_tags` 前 3 个。配置：`CSPUB_JUEJIN_COOKIE`（须含 sessionid）+ 可选 `CSPUB_JUEJIN_UUID/CATEGORY_ID/TAG_IDS`。代码：`src/juejin.cj`。**真机验证（2026-11-05）**：草稿模式回显 draft_id `7704230915765370931`；`--live` 发布 cjh 文章成功回显 `https://juejin.cn/post/7704237589776220186`（分类自动选中「后端」+ 热门标签 3 个自动兜底）。**踩坑**：函数参数不可变（`tagIds = …` 编译报 cannot assign to immutable value），兜底结果须用局部变量承接；cjpm 增量构建可能不重编改动文件（改动后产物 mtime 不变），构建报"成功"实为旧产物——clean 重建才暴露真实编译错误。
+- **`whoami juejin`**：校验 Cookie 含 `sessionid` 及可选配置项。
+
+### 构建
+
+- `cjpm build` 零警告；`cjpm test` 20/20 通过（新增 4 例：建草稿/发布请求体对账、摘要 50-100 字规整、err_no 解析含非 JSON 兜底）（2026-11-05）。真机验证待用户掘金 Cookie 后补跑。
+
 ## [v0.2.1] - 2026-11-04
 
 新增博客园平台（官方 MetaWeblog API，纯 HTTP 零浏览器）；README 更名为「多平台文章发布助手」。

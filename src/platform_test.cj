@@ -223,3 +223,82 @@ func cnblogsRespParseTest(): Unit {
     // 非 XML
     @Assert(parseCnblogsPostId("<html>blocked</html>"), "")
 }
+
+@Test
+func juejinDraftBodyTest(): Unit {
+    let s = buildJuejinDraftBody("标题", "# 正文", "摘要内容五十个字以上满足掘金硬性长度要求才行呀不够就补齐吧", "6809637769959178254", ["6809640445233070098"], "")
+    let v = JsonValue.fromStr(s)
+    match (v.kind()) {
+        case JsonKind.JsObject =>
+            let obj = v.asObject()
+            match (obj.get("edit_type")) {
+                case Some(x) => @Assert(x.asInt().getValue(), 10)
+                case None => @Assert(false, true)
+            }
+            match (obj.get("category_id")) {
+                case Some(x) =>
+                    match (x.kind()) {
+                        case JsonKind.JsString => @Assert(x.asString().getValue(), "6809637769959178254")
+                        case _ => @Assert(false, true)  // 必须是字符串不是数字
+                    }
+                case None => @Assert(false, true)
+            }
+            match (obj.get("html_content")) {
+                case Some(x) => @Assert(x.asString().getValue(), "deprecated")
+                case None => @Assert(false, true)
+            }
+        case _ => @Assert(false, true)
+    }
+    // categoryId 为空则省略字段
+    let noCat = JsonValue.fromStr(buildJuejinDraftBody("t", "m", "brief", "", [], ""))
+    match (noCat.kind()) {
+        case JsonKind.JsObject =>
+            match (noCat.asObject().get("category_id")) {
+                case Some(_) => @Assert(false, true)
+                case None => @Assert(true, true)
+            }
+        case _ => @Assert(false, true)
+    }
+}
+
+@Test
+func juejinPublishBodyTest(): Unit {
+    let s = buildJuejinPublishBody("7301234567890")
+    let v = JsonValue.fromStr(s)
+    match (v.kind()) {
+        case JsonKind.JsObject =>
+            match (v.asObject().get("draft_id")) {
+                case Some(x) => @Assert(x.asString().getValue(), "7301234567890")
+                case None => @Assert(false, true)
+            }
+        case _ => @Assert(false, true)
+    }
+}
+
+@Test
+func juejinBriefTest(): Unit {
+    // desc 足够长：原样
+    let long = "这是一段超过五十个字符的摘要文本，用来验证掘金的摘要长度硬性要求不会触发补齐逻辑，内容保持原样不重复。"
+    @Assert(normalizeJuejinBrief(long, ""), long)
+    // desc 空：从正文剥 Markdown 取
+    let fromBody = normalizeJuejinBrief("", "## 标题\n\n这是一段足够长的正文文字，用来生成摘要，需要超过五十个字符才能满足掘金的硬性要求，因此这里多写一些内容填充。")
+    @Assert(utf8CharCount(fromBody) >= 50, true)
+    // 短摘要：补齐到 50 字以上
+    let short = normalizeJuejinBrief("太短了", "正文内容用来补齐摘要长度，这部分文字应当被重复填充进摘要里直到满足五十个字符的最低要求为止。")
+    @Assert(utf8CharCount(short) >= 50, true)
+}
+
+@Test
+func juejinRespParseTest(): Unit {
+    let (e1, _, id1) = parseJuejinResp("{\"err_no\": 0, \"err_msg\": \"success\", \"data\": {\"id\": \"7301\"}}", "id")
+    @Assert(e1, 0)
+    @Assert(id1, "7301")
+    let (e2, _, aid2) = parseJuejinResp("{\"err_no\": 0, \"err_msg\": \"success\", \"data\": {\"article_id\": \"730000123\"}}", "article_id")
+    @Assert(e2, 0)
+    @Assert(aid2, "730000123")
+    let (e3, m3, _) = parseJuejinResp("{\"err_no\": 2, \"err_msg\": \"参数错误\"}", "id")
+    @Assert(e3, 2)
+    @Assert(m3, "参数错误")
+    let (e4, _, _) = parseJuejinResp("<html>login</html>", "id")
+    @Assert(e4, -1)
+}

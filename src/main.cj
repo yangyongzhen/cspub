@@ -19,6 +19,7 @@
  */
 package cspub
 
+import std.collection.*
 import std.env.*
 import stdx.encoding.hex.*
 import stdx.encoding.json.*
@@ -126,14 +127,14 @@ main(args: Array<String>): Int64 {
 }
 
 func usage(): Unit {
-    println("cspub v0.2.0 — 多平台自动发文 CLI（仓颉实现）：csdn / zhihu / baijiahao")
+    println("cspub v0.2.2 — 多平台自动发文 CLI（仓颉实现）：csdn / zhihu / baijiahao / cnblogs / juejin")
     println("")
     println("用法:")
     println("  cspub check   <文章.md>            解析 front-matter + 渲染统计（不联网）")
     println("  cspub publish <文章.md> [--draft]  发草稿（默认）")
     println("                      [--live]       直接发布（覆盖 front-matter 的 draft: true）")
     println("                      [--update id]  原地更新指定文章（仅 csdn）")
-    println("                      [--platform p] csdn（默认）/ zhihu / baijiahao / cnblogs")
+    println("                      [--platform p] csdn（默认）/ zhihu / baijiahao / cnblogs / juejin")
     println("  cspub whoami [platform]            校验平台凭证配置（不发网络请求）")
     println("  cspub help                         本帮助")
     println("")
@@ -144,6 +145,8 @@ func usage(): Unit {
     println("             ②Cookie 浏览器通道 CSPUB_BAIJIAHAO_COOKIE（通用，须含 BDUSS；另需 python3+playwright+chromium）")
     println("  cnblogs:   CSPUB_CNBLOGS_BLOG_ID、CSPUB_CNBLOGS_USERNAME、CSPUB_CNBLOGS_TOKEN")
     println("             （MetaWeblog 访问令牌，后台「设置 → 允许博客客户端访问」开启并生成）")
+    println("  juejin:    CSPUB_JUEJIN_COOKIE（须含 sessionid）+ 可选 CSPUB_JUEJIN_UUID/CATEGORY_ID/TAG_IDS")
+    println("             （正文图片转存走浏览器通道，需 python3+playwright+chromium）")
     println("front-matter: title(必填) / tags(逗号分隔,最多5) / categories / desc / draft(true|false)")
     println("              / origin_url（baijiahao 必填：原文地址/首发链接）")
 }
@@ -162,6 +165,22 @@ func loadCnblogsCreds(): (String, String, String) {
         println("  方式二：~/.cspub/config.json 写 {\"cnblogsBlogId\": \"…\", \"cnblogsUsername\": \"…\", \"cnblogsToken\": \"…\"}")
     }
     return (blogId, username, token)
+}
+
+/** 载入掘金凭证：环境变量优先，其次 ~/.cspub/config.json */
+func loadJuejinCreds(): (String, String, String, String) {
+    let cookie = loadConfigString("CSPUB_JUEJIN_COOKIE", "juejinCookie")
+    let uuid = loadConfigString("CSPUB_JUEJIN_UUID", "juejinUuid")
+    let categoryId = loadConfigString("CSPUB_JUEJIN_CATEGORY_ID", "juejinCategoryId")
+    let tagIds = loadConfigString("CSPUB_JUEJIN_TAG_IDS", "juejinTagIds")
+    if (cookie.size == 0) {
+        println("错误：没有找到掘金 Cookie。")
+        println("  方式一：export CSPUB_JUEJIN_COOKIE='<浏览器登录 juejin.cn 后复制的 Cookie 整串，须含 sessionid>'")
+        println("  方式二：~/.cspub/config.json 写 {\"juejinCookie\": \"...\"}")
+        println("  可选：CSPUB_JUEJIN_UUID（api 请求里的 uuid）、CSPUB_JUEJIN_CATEGORY_ID / CSPUB_JUEJIN_TAG_IDS")
+        println("  （分类/标签用掘金内部 ID：后台抓包 category_id / tag_ids；不配置则草稿不带分类标签）")
+    }
+    return (cookie, uuid, categoryId, tagIds)
 }
 
 /** 命令：whoami——解析平台凭证里的账号标识，配置自检用（不发网络请求） */
@@ -184,6 +203,22 @@ func cmdWhoami(args: Array<String>): Int64 {
         println("z_c0       : 存在（${zc0.size} 字节）")
         println("XSRF-TOKEN : ${if (xsrf.size > 0) { "存在" } else { "缺失（发文时可能被 403，建议整串复制）" }}")
         println("Cookie 配置可用（未联网验证；publish 时以知乎实际响应为准）")
+        return 0
+    }
+    if (platform == "juejin") {
+        let (cookie, uuid, categoryId, _) = loadJuejinCreds()
+        if (cookie.size == 0) {
+            return 1
+        }
+        let sid = cookieValue(cookie, "sessionid")
+        if (sid.size == 0) {
+            println("Cookie 里没有 sessionid——不是登录态整串（要浏览器登录 juejin.cn 后复制的 Cookie）")
+            return 1
+        }
+        println("sessionid : 存在（${sid.size} 字节）")
+        println("uuid      : ${if (uuid.size > 0) { "已配置" } else { "未配置（可选，遇到校验错误再补）" }}")
+        println("category/tag: ${if (categoryId.size > 0) { "category 已配置" } else { "category 未配置（草稿将不带分类）" }}")
+        println("Cookie 配置可用（未联网验证；publish 时以掘金实际响应为准）")
         return 0
     }
     if (platform == "cnblogs") {
@@ -330,6 +365,26 @@ func cmdPublish(args: Array<String>, startIdx: Int64): Int64 {
         println("     Cookie 获取：浏览器登录 baijiahao.baidu.com → F12 → 复制 Cookie 整串（须含 BDUSS）")
         println("     通道②另需宿主机：python3 + playwright + chromium（pip install playwright && playwright install chromium）")
         return 1
+    }
+    if (platform == "juejin") {
+        let (cookie, uuid, categoryId, tagIds) = loadJuejinCreds()
+        if (cookie.size == 0) {
+            return 1
+        }
+        var tagArr: Array<String> = Array<String>()
+        if (tagIds.size > 0) {
+            var list: ArrayList<String> = ArrayList<String>()
+            for (p in tagIds.split(",", -1)) {
+                let t = trimAscii(p)
+                if (t.size > 0) {
+                    list.add(t)
+                }
+            }
+            tagArr = list.toArray()
+        }
+        let mode = if (publishNow) { "publish" } else { "draft" }
+        println("发布到掘金（${mode}）…")
+        return publishToJuejin(cookie, uuid, categoryId, tagArr, a, publishNow, insecure)
     }
     if (platform == "cnblogs") {
         let (blogId, username, token) = loadCnblogsCreds()

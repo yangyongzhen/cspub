@@ -1,3 +1,6 @@
 target/
 cjpm.lock
 *.log
+dist/
+baijiahao_result.png
+__pycache__/
