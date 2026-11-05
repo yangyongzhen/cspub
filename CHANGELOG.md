@@ -39,6 +39,13 @@ cspub 版本变更记录。版本号规则沿用 cjh：重大更新递增中间�
 - **缺陷 1**：`CSPUB_STRICT_IMAGES=1` + 一张不存在的本地图 → 输出
   `⚠⚠ 图片未转存成功：正文仍有 1 张本地图片（juejin）… 已按 CSPUB_STRICT_IMAGES 中止发布`，
   进程 `exit=1` 且**未创建草稿**（旧版会照发一篇死链文）。
+- **CSDN（新 Cookie 复测）**：`cookie_xiao`（2026-11-05 18:32 更新）下默认 TLS 仍报
+  `certificate verify failed (134), unknown CA`（Certum 链，见踩坑 §3），加 `--insecure` 后成功发草稿
+  **`170146741`**（https://blog.csdn.net/m0_46384600/article/details/170146741）；5 张本地图全部转存到
+  `i-blog.csdnimg.cn/direct/…`，直链 `curl` 逐张 **200**：181456 / 95037 / 159044 / 342709 / 478469 字节。
+  默认 TLS 那次「图片 0/5 + 发文失败」正好走到本版新增的收口告警：
+  `⚠⚠ 图片未转存成功：正文仍有 5 张本地图片（csdn）`——缺陷 1 的修复在真实故障里被触发验证。
+  注：CSDN 网关对 `mdeditor/*` 全家族要求 `X-Ca-Key` 签名（仅 `saveArticle` 已签名），草稿正文无法程序化回读。
 
 ## [v0.2.5] - 2026-11-05
 
