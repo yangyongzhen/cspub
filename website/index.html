@@ -1,0 +1,755 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>cspub · 一份 Markdown，发遍六个技术平台</title>
+<meta name="description" content="cspub 是用华为仓颉语言写的多平台发文 CLI：读带 front-matter 的 Markdown，自动渲染 HTML、按平台转存图片、签名发文，默认存草稿。支持 CSDN / 知乎 / 百家号 / 博客园 / 掘金 / 开源中国，主链路零第三方依赖。">
+<meta name="keywords" content="仓颉,cspub,CSDN,知乎,掘金,开源中国,百家号,博客园,Markdown,自动发文,多平台发布,CLI,图片转存">
+<meta name="author" content="cspub contributors">
+<meta name="theme-color" content="#0a0b0f">
+<meta name="robots" content="index,follow">
+<link rel="canonical" href="https://yangyongzhen.github.io/cspub/">
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="cspub">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:url" content="https://yangyongzhen.github.io/cspub/">
+<meta property="og:title" content="cspub · 一份 Markdown，发遍六个技术平台">
+<meta property="og:description" content="仓颉写的多平台发文 CLI：自动渲染 HTML、按平台转存图片、签名发文，默认草稿。CSDN / 知乎 / 百家号 / 博客园 / 掘金 / 开源中国。">
+<meta property="og:image" content="https://yangyongzhen.github.io/cspub/assets/imgs/cspub-flow.png">
+<meta name="twitter:card" content="summary_large_image">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "cspub",
+  "applicationCategory": "DeveloperApplication",
+  "operatingSystem": "Linux, Windows",
+  "softwareVersion": "0.2.6",
+  "license": "https://opensource.org/licenses/MIT",
+  "description": "华为仓颉实现的多平台发文 CLI：Markdown + front-matter 到 CSDN / 知乎 / 百家号 / 博客园 / 掘金 / 开源中国，自动图片转存与平台签名。",
+  "url": "https://yangyongzhen.github.io/cspub/",
+  "sameAs": [
+    "https://atomgit.com/qq8864/cspub",
+    "https://github.com/yangyongzhen/cspub"
+  ]
+}
+</script>
+<link rel="stylesheet" href="assets/style.css">
+<noscript><style>.reveal{opacity:1;transform:none}</style></noscript>
+</head>
+<body>
+
+<!-- ============================ 导航 ============================ -->
+<header class="nav" id="nav">
+  <div class="nav__inner">
+    <a class="brand" href="#top">
+      <svg class="brand__mark" viewBox="0 0 64 64" aria-hidden="true">
+        <rect width="64" height="64" rx="14" fill="#12151c" stroke="rgba(255,255,255,.12)"/>
+        <path d="M15 15h15l7 7v27H15z" fill="none" stroke="#ffb224" stroke-width="3.4" stroke-linejoin="round"/>
+        <path d="M30 15v7h7" fill="none" stroke="#ffb224" stroke-width="3.4" stroke-linejoin="round"/>
+        <path d="M41 32h7M45 24l5 8-5 8" fill="none" stroke="#3fd8a4" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="53" cy="32" r="3.2" fill="#3fd8a4"/>
+      </svg>
+      cspub
+      <span class="brand__ver">v0.2.6</span>
+    </a>
+    <button class="nav__toggle" id="navToggle" aria-label="展开导航" aria-expanded="false">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+    </button>
+    <nav class="nav__links" id="navLinks">
+      <a href="#platforms">支持平台</a>
+      <a href="#how">工作方式</a>
+      <a href="#images">图片转存</a>
+      <a href="#credential">凭证</a>
+      <a href="#start">快速开始</a>
+      <a href="#faq">FAQ</a>
+    </nav>
+    <div class="nav__cta">
+      <a class="btn btn--ghost" href="https://atomgit.com/qq8864/cspub" target="_blank" rel="noopener">源码</a>
+    </div>
+  </div>
+</header>
+
+<main id="top">
+
+<!-- ============================ 首屏 ============================ -->
+<section class="hero">
+  <div class="wrap">
+    <div class="hero__grid">
+      <div class="hero__copy reveal">
+        <span class="hero__badge"><b>仓颉</b> 用华为仓颉语言写的发文 CLI · MIT</span>
+        <h1>一份 Markdown，<br>发遍<span class="hl">六个平台</span>。</h1>
+        <p class="hero__sub">
+          你只写带 front-matter 的 Markdown。剩下的它来做：渲染成各平台要的 HTML、
+          按平台把图片转到对的图床、算好签名、发成草稿，最后回显文章 id。
+          <strong>主链路零第三方依赖</strong>，一条命令，一个平台。
+        </p>
+        <div class="hero__actions">
+          <a class="btn btn--primary" href="#start">
+            三步用起来
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </a>
+          <a class="btn btn--ghost" href="#how">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h10M4 18h7"/></svg>
+            看它怎么工作
+          </a>
+        </div>
+        <div class="hero__meta">
+          <span>零第三方依赖</span>
+          <span>默认只发草稿</span>
+          <span>拒绝 30x 重定向</span>
+          <span>内网地址拦截</span>
+        </div>
+      </div>
+
+      <div class="hero__term reveal">
+        <div class="term">
+          <div class="term__bar">
+            <span class="term__dots"><i></i><i></i><i></i></span>
+            <span class="term__title">~/notes — cspub</span>
+          </div>
+          <div class="term__body"><span class="cm">$ cspub publish 用仓颉写发文工具.md --platform csdn</span>
+<span class="p">›</span> front-matter   <span class="ok">title</span> / <span class="ok">tags</span>=仓颉,工具 / <span class="ok">draft</span>=true
+<span class="p">›</span> 渲染 HTML      <span class="arg">1</span> 标题 · <span class="arg">14</span> 段落 · <span class="arg">3</span> 张图 · <span class="arg">12.4 KB</span>
+<span class="p">›</span> 图片转存       csdnimg.cn  <span class="ok">3/3 成功</span>
+<span class="p">›</span> 网关签名       x-ca-key · x-ca-signature <span class="cm">HMAC-SHA256</span>
+<span class="p">›</span> 提交草稿       <span class="ok">HTTP 200</span>
+<span class="ok">✓</span> article id = <span class="id">159873342</span>
+  <span class="cm">└─ 发布：cspub publish 用仓颉写发文工具.md --live</span>
+  <span class="cm">└─ 更新：cspub publish 用仓颉写发文工具.md --update 159873342</span></div>
+          <div class="term__foot">
+            <span class="live">运行中 · 单条命令完成六环节流水线</span>
+            <span>cspub help 看全部命令</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ 平台矩阵 ============================ -->
+<section class="platforms" id="platforms">
+  <div class="wrap">
+    <div class="platforms__grid">
+      <div class="pf reveal">
+        <div class="pf__top">
+          <span class="pf__dot" style="background:#fc5531"></span>
+          <span class="pf__name">CSDN</span>
+          <span class="pf__how">HMAC</span>
+        </div>
+        <p class="pf__desc">网关签名 + Cookie；外链图强制转自家图床（防盗链）。改文用 <code>--update</code></p>
+      </div>
+      <div class="pf reveal">
+        <div class="pf__top">
+          <span class="pf__dot" style="background:#0084ff"></span>
+          <span class="pf__name">知乎</span>
+          <span class="pf__how">COOKIE</span>
+        </div>
+        <p class="pf__desc">专栏草稿三步流；知乎会剥离站外图，图片先转知乎 CDN</p>
+      </div>
+      <div class="pf reveal">
+        <div class="pf__top">
+          <span class="pf__dot" style="background:#1e6fff"></span>
+          <span class="pf__name">掘金</span>
+          <span class="pf__how">EXTERNAL</span>
+        </div>
+        <p class="pf__desc">接受外链图：本地图直传 AtomGit 仓库当图床，不依赖浏览器</p>
+      </div>
+      <div class="pf reveal">
+        <div class="pf__top">
+          <span class="pf__dot" style="background:#e7581f"></span>
+          <span class="pf__name">开源中国</span>
+          <span class="pf__how">COOKIE</span>
+        </div>
+        <p class="pf__desc">直通站点接口，用其自带图床（<code>oscimg</code>），提交 Markdown 由服务端渲染</p>
+      </div>
+      <div class="pf reveal">
+        <div class="pf__top">
+          <span class="pf__dot" style="background:#2932e1"></span>
+          <span class="pf__name">百家号</span>
+          <span class="pf__how">DUAL</span>
+        </div>
+        <p class="pf__desc">官方 token 通道，或 Cookie 走 Playwright 浏览器自动化填表</p>
+      </div>
+      <div class="pf reveal">
+        <div class="pf__top">
+          <span class="pf__dot" style="background:#2b6cd4"></span>
+          <span class="pf__name">博客园</span>
+          <span class="pf__how">METABLOG</span>
+        </div>
+        <p class="pf__desc">官方 MetaWeblog API，纯 HTTP 无 Cookie，令牌即身份</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ 为什么 ============================ -->
+<section id="why">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <span class="sec-no">01 / 设计取舍</span>
+      <h2 class="section-title">发文工具最怕两种翻车：<br>发错地方，和图片没了</h2>
+      <p class="lead">所以它在这两件事上刻意保守：默认不出手，出手前先把图落到不会失效的地方。</p>
+    </div>
+
+    <div class="why-grid">
+      <article class="card why reveal">
+        <div class="why__icon">
+          <svg viewBox="0 0 24 24"><path d="M12 3v18M3 8l9-5 9 5M3 16l9 5 9-5"/></svg>
+        </div>
+        <h3>零第三方依赖</h3>
+        <p>
+          HMAC-SHA256 签名、Base64、HTTP、JSON 全走仓颉标准库与 stdx，静态编译成单文件。
+          只有百家号 Cookie 通道需要 Playwright 伴生脚本，其余平台不需要 Python、不需要浏览器。
+        </p>
+      </article>
+      <article class="card why reveal">
+        <div class="why__icon">
+          <svg viewBox="0 0 24 24"><path d="M12 3l7 4v5c0 4.4-3 8-7 9-4-1-7-4.6-7-9V7z"/><path d="M9 12l2.2 2.2L15 10"/></svg>
+        </div>
+        <h3>默认只发草稿</h3>
+        <p>
+          <code class="mono">publish</code> 不带参数就是存草稿，手滑不会直接上线；确认没问题再加
+          <code class="mono">--live</code>。已发布的文章用 <code class="mono">--update &lt;id&gt;</code> 原地更新，
+          不会在平台堆出一串重复稿。
+        </p>
+      </article>
+      <article class="card why reveal">
+        <div class="why__icon">
+          <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M4 17l5-4 4 3 3-2 4 3"/></svg>
+        </div>
+        <h3>图片不给你挖坑</h3>
+        <p>
+          CSDN 站外图有防盗链（直连回 <b class="mono">200 + 0 字节</b>的空图），知乎会剥掉站外图。
+          发文前自动按平台转存，并拦下内网/回环地址、拒绝 30x 重定向、单张限 12 MiB。
+        </p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ 工作方式 ============================ -->
+<section id="how">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <span class="sec-no">02 / 流水线</span>
+      <h2 class="section-title">一条命令，六个环节</h2>
+      <p class="lead">每一环都可以单独预演：<code class="mono">cspub check</code> 只解析、<code class="mono">cspub html</code> 只渲染、<code class="mono">cspub imgs</code> 只预判图片去向，都不联网。</p>
+    </div>
+
+    <div class="flow__grid">
+      <figure class="flow__figure reveal">
+        <img src="assets/imgs/cspub-flow.svg" alt="cspub 发文数据流：Markdown 输入 → 图片转存 → HTML 渲染 → 平台鉴权 → 提交 → 回显" width="1770" height="840" loading="lazy">
+        <figcaption class="flow__caption">图 / 源图 SVG 随仓库版本化，可编辑：docs/imgs/cspub-flow.svg</figcaption>
+      </figure>
+
+      <ol class="steps reveal">
+        <li>
+          <div>
+            <h4>读 Markdown + front-matter</h4>
+            <p>title / tags / categories / desc / draft，缺 desc 就从正文剥掉标记取前 200 字（按 UTF-8 字节判界，不切半个汉字）。</p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <h4>按平台转存图片</h4>
+            <p>代码围栏内的图片引用跳过；已是目标图床的直接放行；单张失败保留原链接并提示，不阻断发文。</p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <h4>渲染成 HTML</h4>
+            <p>各平台编辑器要的是渲染结果，不是 Markdown 源文。内置渲染器覆盖标题/段落/列表/引用/围栏代码/图片/链接/行内代码/加粗。</p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <h4>按平台鉴权</h4>
+            <p>CSDN 走阿里云网关风格 HMAC 签名的 <span class="mono">x-ca-*</span> 头；知乎/掘金/开源中国用登录 Cookie；博客园用令牌。</p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <h4>提交草稿</h4>
+            <p>默认 <span class="mono">draft</span>，加 <span class="mono">--live</span> 才真发；错误码原样回显，不替你猜。</p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <h4>回显 id 与链接</h4>
+            <p>拿到 article id 才算成功，同时打印后续发布 / 更新该文的命令，可直接复制。</p>
+          </div>
+        </li>
+      </ol>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ 图片转存 ============================ -->
+<section id="images">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <span class="sec-no">03 / 图片</span>
+      <h2 class="section-title">发文前，先把图搬到不会失效的地方</h2>
+      <p class="lead">外链图是文章最常见的慢性死法：源站改防盗链、图床停服、或者平台直接把站外图剥掉。所以图片处理按平台分三套策略。</p>
+    </div>
+
+    <div class="rehost__grid">
+      <div class="reveal">
+        <div class="code">
+          <div class="code__bar">
+            <span class="code__label">cspub imgs 用仓颉写发文工具.md</span>
+            <button class="code__copy" type="button">
+              <svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5h10"/></svg>复制
+            </button>
+          </div>
+          <pre><span class="c"># 只扫描不联网，预判每张图的去向</span>
+图 1  <span class="s">rehost</span>   raw.githubusercontent.com/a.png  <span class="c">→ 转 CSDN 图床</span>
+图 2  <span class="s">skip</span>     i-blog.csdnimg.cn/direct/...  <span class="c">→ 已是目标图床</span>
+图 3  <span class="k">BLOCKED</span>  http://192.168.1.9/logo.png   <span class="c">→ 内网地址，拦截</span></pre>
+        </div>
+
+        <div class="warn-box">
+          <div class="warn-box__t">
+            <svg viewBox="0 0 24 24"><path d="M12 9v4M12 17h.01"/><path d="M10.3 4.3L2.8 17a2 2 0 001.7 3h15a2 2 0 001.7-3L13.7 4.3a2 2 0 00-3.4 0z"/></svg>
+            这条链路的经典陷阱
+          </div>
+          <p>
+            图床签名响应里 <code>customParam.isAudit</code> 是 <b>JSON 数字</b>。用只认字符串的取值函数去取，会得到空串；
+            把空的 <code>x:isAudit</code> 发给华为 OBS，OBS 回的是 <b>HTTP 200 + 0 字节</b>——
+            看起来像"被网关吞了"，实际是回调拿不到字段。改法是按 JSON 类型分派取值。
+          </p>
+        </div>
+      </div>
+
+      <div class="strategy reveal">
+        <div class="strategy__item">
+          <svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>
+          <div>
+            <h4>CSDN · 转自家图床</h4>
+            <p>签名接口 + 华为 OBS multipart + 回调，最终回写 <code>i-blog.csdnimg.cn</code> 直链。实测一篇两图 <b>2/2</b> 成功。</p>
+          </div>
+        </div>
+        <div class="strategy__item">
+          <svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>
+          <div>
+            <h4>掘金 · 外链优先</h4>
+            <p>掘金接受外链图。本地图直传 AtomGit 仓库、正文嵌 raw 直链，整条图片链路不再依赖 Playwright。</p>
+          </div>
+        </div>
+        <div class="strategy__item">
+          <svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>
+          <div>
+            <h4>开源中国 · 用它自带图床</h4>
+            <p>一个 multipart 请求就够，2 MB 单请求实测通过；失败的本地图再用 AtomGit 外链兜底。</p>
+          </div>
+        </div>
+        <div class="strategy__item">
+          <svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>
+          <div>
+            <h4>知乎 · 先过它的 CDN</h4>
+            <p>知乎会剥离站外图，所以图片提交前先转存到知乎 CDN，正文引用同步回写。</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ 凭证 ============================ -->
+<section id="credential">
+  <div class="wrap">
+    <div class="cred__grid">
+      <div class="reveal">
+        <div class="section-head" style="margin-bottom:26px">
+          <span class="sec-no">04 / 凭证</span>
+          <h2 class="section-title">别再对着 F12 抄 Cookie 了</h2>
+          <p class="lead">
+            真正起作用的字段——知乎 <code class="mono">z_c0</code>、掘金 <code class="mono">sessionid</code>、
+            CSDN <code class="mono">UserToken</code>——多半是 <b>httpOnly</b>，
+            <code class="mono">document.cookie</code> 读不到，手抄还容易漏字段。
+          </p>
+        </div>
+        <p class="lead" style="font-size:14.5px">
+          配套的桌面小工具 <b>cookie-export</b> 把这件事做成点三下：内嵌浏览器登录一次，
+          导出直接写进 <code class="mono">~/.cspub/config.json</code>（合并写、600 权限）。
+          它和 cspub 是同一套壳工程下的两个仓库，全部本机运行，不上报任何 cookie。
+        </p>
+        <ol class="cred-steps">
+          <li>
+            <span class="n">1</span>
+            <div>
+              <h4>登录</h4>
+              <p>点平台卡片的「登录」，在内嵌窗口里正常登录——共享原生 cookie store，httpOnly 字段也在里面。</p>
+            </div>
+          </li>
+          <li>
+            <span class="n">2</span>
+            <div>
+              <h4>提取</h4>
+              <p>按 cspub 各平台的字段硬需求逐项校验，缺哪个直接点出来，例如 <code>已提取，但缺必需字段：UserToken</code>。</p>
+            </div>
+          </li>
+          <li>
+            <span class="n">3</span>
+            <div>
+              <h4>导出</h4>
+              <p>写 <code>~/.cspub/config.json</code> 并同时落一份 <code>~/.cspub/cookie_&lt;平台&gt;</code> 文本，cspub 直接可用。</p>
+            </div>
+          </li>
+        </ol>
+      </div>
+
+      <div class="reveal">
+        <div class="shot">
+          <img src="assets/imgs/cookie-export-tool.png" alt="cookie-export 工具界面：五个平台卡片，每个带登录 / 提取 / 导出按钮与字段徽标" width="1000" height="714" loading="lazy">
+          <div class="shot__cap">
+            <span>cookie-export · 覆盖 5 个 cookie 平台</span>
+            <a href="https://atomgit.com/qq8864/cj-tauri/tree/main/examples/cookie-export" target="_blank" rel="noopener">源码 →</a>
+          </div>
+        </div>
+        <p class="panel-note" style="margin-top:14px">
+          博客园走 MetaWeblog 令牌（不是 cookie），后台「设置 → 允许博客客户端访问」生成即可，无需工具。
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ 快速开始 ============================ -->
+<section id="start">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <span class="sec-no">05 / 上手</span>
+      <h2 class="section-title">三步：给凭证、写文章、发草稿</h2>
+      <p class="lead">需要仓颉 SDK（构建用）与平台自己的登录凭证或令牌。构建产物是单个可执行文件，拷到别的机器也能跑。</p>
+    </div>
+
+    <div class="quick__grid reveal">
+      <div class="tabs" role="tablist" aria-label="上手步骤">
+        <button class="tab" role="tab" aria-selected="true" aria-controls="panel-1" id="tab-1">
+          <svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h10M4 17h7"/></svg>
+          <span>1 · 配置凭证<small>环境变量或 config.json</small></span>
+        </button>
+        <button class="tab" role="tab" aria-selected="false" aria-controls="panel-2" id="tab-2">
+          <svg viewBox="0 0 24 24"><path d="M4 20h16M6 16l3-9 3 6 3-4 3 7"/></svg>
+          <span>2 · 写文章<small>Markdown + front-matter</small></span>
+        </button>
+        <button class="tab" role="tab" aria-selected="false" aria-controls="panel-3" id="tab-3">
+          <svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          <span>3 · 发出去<small>先草稿，再 --live</small></span>
+        </button>
+        <button class="tab" role="tab" aria-selected="false" aria-controls="panel-4" id="tab-4">
+          <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 9h8M8 13h5"/></svg>
+          <span>构建<small>从源码编译</small></span>
+        </button>
+      </div>
+
+      <div class="panels">
+        <div class="panel is-on" id="panel-1" role="tabpanel" aria-labelledby="tab-1">
+          <h3>凭证二选一：环境变量优先，config.json 持久</h3>
+          <p>环境变量对同机其他进程可见（<code class="mono">/proc/&lt;pid&gt;/environ</code>），共享机器建议用 config.json + <code class="mono">chmod 600</code>。</p>
+          <div class="code">
+            <div class="code__bar">
+              <span class="code__label">~/.bashrc（临时用 export 即可）</span>
+              <button class="code__copy" type="button"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5h10"/></svg>复制</button>
+            </div>
+            <pre><span class="c"># Cookie 整串含空格与分号，写 profile 时用单引号包裹</span>
+<span class="k">export</span> CSPUB_CSDN_COOKIE=<span class="s">'&lt;浏览器 F12 复制的 Cookie 整串&gt;'</span>
+<span class="k">export</span> CSPUB_ZHIHU_COOKIE=<span class="s">'&lt;须含 z_c0 与 XSRF-TOKEN&gt;'</span>
+<span class="k">export</span> CSPUB_JUEJIN_COOKIE=<span class="s">'&lt;须含 sessionid&gt;'</span>
+
+<span class="c"># 或者写进配置文件（合并写，600 权限）</span>
+<span class="c"># {"csdnCookie": "...", "zhihuCookie": "..."}</span></pre>
+          </div>
+          <p class="panel-note"><code>cspub whoami</code> 校验凭证是否就位（只验格式、不联网）；Cookie 过期时发文会提示重取。</p>
+        </div>
+
+        <div class="panel" id="panel-2" role="tabpanel" aria-labelledby="tab-2">
+          <h3>文章就是一个带 front-matter 的 .md</h3>
+          <p>只有 <code class="mono">title</code> 必填；<code class="mono">draft</code> 缺省为 true，正文照常写 Markdown。</p>
+          <div class="code">
+            <div class="code__bar">
+              <span class="code__label">用仓颉写发文工具.md</span>
+              <button class="code__copy" type="button"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5h10"/></svg>复制</button>
+            </div>
+            <pre><span class="a">---</span>
+<span class="k">title</span>: 用仓颉写一个多平台发文 CLI
+<span class="k">tags</span>: 仓颉, 工具          <span class="c"># 逗号/顿号分隔，最多 5 个</span>
+<span class="k">categories</span>: 编程
+<span class="k">desc</span>: 摘要一行           <span class="c"># 缺省从正文剥标记取前 200 字</span>
+<span class="k">draft</span>: true              <span class="c"># --live 可覆盖</span>
+<span class="a">---</span>
+
+## 正文
+
+这里照常写 Markdown，图片用 <span class="s">![说明](./imgs/x.png)</span> 引用即可。</pre>
+          </div>
+          <p class="panel-note">先自检：<code>cspub check 文章.md</code> 解析统计 · <code>cspub html 文章.md</code> 目验渲染结果 · <code>cspub imgs 文章.md</code> 预判每张图去向。</p>
+        </div>
+
+        <div class="panel" id="panel-3" role="tabpanel" aria-labelledby="tab-3">
+          <h3>一条命令一个平台</h3>
+          <p>不加参数就是草稿。确认文章没问题，再 <code class="mono">--live</code>；已发布的用 <code class="mono">--update</code> 改。</p>
+          <div class="code">
+            <div class="code__bar">
+              <span class="code__label">publish</span>
+              <button class="code__copy" type="button"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5h10"/></svg>复制</button>
+            </div>
+            <pre>cspub publish 我的文章.md --platform csdn       <span class="c"># 存草稿</span>
+cspub publish 我的文章.md --platform zhihu
+cspub publish 我的文章.md --platform juejin
+cspub publish 我的文章.md --platform oschina
+cspub publish 我的文章.md --platform baijiahao
+cspub publish 我的文章.md --platform cnblogs
+
+cspub publish 我的文章.md --live               <span class="c"># 直接发布</span>
+cspub publish 我的文章.md --update <span class="a">159873342</span>   <span class="c"># 原地更新（CSDN）</span></pre>
+          </div>
+          <p class="panel-note">排障时设 <code>CSPUB_DEBUG=1</code>，往 stderr 打图床与发文链路的诊断行；TLS 报未知 CA 时先确认系统 curl 是否也失败，再考虑 <code>--insecure</code>（TrustAll，自担风险）。</p>
+        </div>
+
+        <div class="panel" id="panel-4" role="tabpanel" aria-labelledby="tab-4">
+          <h3>从源码构建</h3>
+          <p>仓颉 1.2.0 + 配套 stdx。产物在 <code class="mono">target/release/bin/main</code>。</p>
+          <div class="code">
+            <div class="code__bar">
+              <span class="code__label">bash</span>
+              <button class="code__copy" type="button"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5h10"/></svg>复制</button>
+            </div>
+            <pre><span class="k">export</span> CANGJIE_STDX=<span class="s">&lt;stdx&gt;/dynamic/stdx</span>
+<span class="k">export</span> PATH=$CANGJIE_HOME/bin:$CANGJIE_HOME/tools/bin:$PATH
+cjpm build
+
+<span class="c"># 本地运行（缺 .so 时补 LD_LIBRARY_PATH）</span>
+./target/release/bin/main help
+
+<span class="c"># Windows 交叉编译：exe + 自包含 zip</span>
+./scripts/winbuild.sh</pre>
+          </div>
+          <p class="panel-note">发布产物含 tar.gz 与 SHA256SUMS，见仓库 <code>docs/发布与版本维护.md</code>。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ front-matter 速查 ============================ -->
+<section id="frontmatter">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <span class="sec-no">06 / 速查</span>
+      <h2 class="section-title">front-matter 字段</h2>
+      <p class="lead">字段少是刻意的——只保留各平台都认的那几个，平台私有参数走环境变量或命令行开关。</p>
+    </div>
+
+    <div class="fm__grid">
+      <div class="reveal">
+        <table class="fm-table">
+          <thead>
+            <tr><th>字段</th><th>说明</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>title</td><td>必填，文章标题</td></tr>
+            <tr><td>tags</td><td>逗号或顿号分隔，最多 5 个（接口上限）</td></tr>
+            <tr><td>categories</td><td>分类名；开源中国按名字匹配，匹配不到取账号第一个分类</td></tr>
+            <tr><td>desc</td><td>摘要；缺省从正文剥掉标记取前 200 字（按 UTF-8 字节判界）</td></tr>
+            <tr><td>draft</td><td>缺省 <code>true</code>；命令行 <code>--live</code> 覆盖</td></tr>
+            <tr><td>origin_url</td><td>原文地址，百家号必填</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="reveal">
+        <div class="code">
+          <div class="code__bar">
+            <span class="code__label">命令一览</span>
+            <button class="code__copy" type="button"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5h10"/></svg>复制</button>
+          </div>
+          <pre>cspub check   &lt;文章.md&gt;           <span class="c"># 解析 + 渲染统计，不联网</span>
+cspub html    &lt;文章.md&gt;           <span class="c"># 打印渲染后的 HTML</span>
+cspub imgs    &lt;文章.md&gt;           <span class="c"># 预演图片处理（rehost/skip/BLOCKED）</span>
+cspub publish &lt;文章.md&gt;           <span class="c"># 发草稿（默认）</span>
+cspub whoami  [platform]          <span class="c"># 校验凭证格式</span>
+cspub help</pre>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ 实测与限制 ============================ -->
+<section id="evidence">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <span class="sec-no">07 / 实测</span>
+      <h2 class="section-title">写下来的每个数，都跑过</h2>
+      <p class="lead">仓库的 change log 有条硬规矩：<b>每条变更带验证证据</b>（实测输出、错误码、转存结果），不写没有证据的条目。所以这里也只放跑过的数字。</p>
+    </div>
+
+    <div class="proof">
+      <div class="proof__item reveal">
+        <span class="proof__num">2 / 2</span>
+        <span class="proof__label">带 2 张 test 外链图的真实文章，图片转存全成功并回写 csdnimg.cn 直链</span>
+        <span class="proof__meta">2026-10-21 · 端到端</span>
+      </div>
+      <div class="proof__item reveal">
+        <span class="proof__num">6</span>
+        <span class="proof__label">覆盖平台：CSDN / 知乎 / 掘金 / 开源中国 / 百家号 / 博客园</span>
+        <span class="proof__meta">各自独立鉴权通道</span>
+      </div>
+      <div class="proof__item reveal">
+        <span class="proof__num">0</span>
+        <span class="proof__label">主链路的第三方依赖：HMAC、Base64、HTTP、JSON 全走仓颉 stdx</span>
+        <span class="proof__meta">单文件产物</span>
+      </div>
+      <div class="proof__item reveal">
+        <span class="proof__num">3</span>
+        <span class="proof__label">本地图真机发文验证（开源中国），服务端渲染后正文图片正常显示</span>
+        <span class="proof__meta">2026-11-05 · 真机</span>
+      </div>
+    </div>
+
+    <div class="limits">
+      <div class="limits__item reveal">
+        <span class="mk">!</span>
+        <p><b>CSDN 每日 1 篇额度</b>：额度用满时接口回 <span class="mono">400300012</span>，存草稿（<span class="mono">400300001</span>）同样被拒。这不是工具问题，换自然日或换账号。</p>
+      </div>
+      <div class="limits__item reveal">
+        <span class="mk">!</span>
+        <p><b>Markdown 扩展不渲染</b>：表格 / 脚注 / 任务列表原样落进段落。发之前用 <span class="mono">cspub html</span> 目验。</p>
+      </div>
+      <div class="limits__item reveal">
+        <span class="mk">!</span>
+        <p><b>更新只管 CSDN</b>：<span class="mono">--update &lt;id&gt;</span> 目前仅 CSDN 支持，其他平台需在后台改。</p>
+      </div>
+      <div class="limits__item reveal">
+        <span class="mk">!</span>
+        <p><b>开源中国：发布 ≠ 立刻公开</b>：接口回 id 后新号/首篇常走人工审核，公开页可能还是「找不到页面」。判可见性只能看浏览器渲染。</p>
+      </div>
+      <div class="limits__item reveal">
+        <span class="mk">!</span>
+        <p><b>CSDN 证书链</b>：根是 Certum（小众 CA），stdx TLS 报 unknown CA 而系统 curl 能过；<span class="mono">--insecure</span>（TrustAll）是逃生口，风险自担。</p>
+      </div>
+      <div class="limits__item reveal">
+        <span class="mk">!</span>
+        <p><b>Windows 发文未真机实测</b>：交叉编译产物（exe + 自包含 zip）能跑，发文链路只在 Linux 上验过。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ FAQ ============================ -->
+<section id="faq">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <span class="sec-no">08 / 常见问题</span>
+      <h2 class="section-title">动手前常问的几件事</h2>
+    </div>
+
+    <div class="faq reveal">
+      <details>
+        <summary>为什么不走各平台的官方开放 API？</summary>
+        <div class="a">
+          <p>大多数平台没有可直接创建文章的开放 API，能发的是「编辑器同款内部接口」——CSDN 是阿里云网关风格的 HMAC 签名，知乎/掘金/开源中国凭登录 Cookie，博客园恰好有官方 MetaWeblog 接口。</p>
+          <p>因此每个平台一条独立适配通道，各自的鉴权、图片、字段约定都不同；这也决定了它不可能是一个「统一 API 客户端」。</p>
+        </div>
+      </details>
+      <details>
+        <summary>我的 Cookie 会被发到哪里？</summary>
+        <div class="a">
+          <p>只发给对应平台自己的域名。cspub 没有统计、没有回调、没有中间服务器；凭证来源是环境变量或本机 <code>~/.cspub/config.json</code>（600 权限）。</p>
+        </div>
+      </details>
+      <details>
+        <summary>图片转存失败了会怎样？</summary>
+        <div class="a">
+          <p>默认 best-effort：失败的那张保留原链接、正文照发、同时打醒目告警。想让「仍有本地图残留」直接中止发布，设 <code>CSPUB_STRICT_IMAGES=1</code>。</p>
+        </div>
+      </details>
+      <details>
+        <summary>能一次发到多个平台吗？</summary>
+        <div class="a">
+          <p>命令是「一条命令一个平台」，明确、可回滚。批量就是脚本里循环几条 <code>cspub publish</code>，各平台返回各自的 id，互不影响。</p>
+        </div>
+      </details>
+      <details>
+        <summary>为什么用仓颉写？</summary>
+        <div class="a">
+          <p>真实场景练手：一条「HTTP 客户端 + HMAC 签名 + JSON」链路，仓颉 stdx 恰好齐活，不用装任何第三方包。实现中的坑（HMAC 逐字节对账、TLS 信任、UTF-8 字节语义、struct 可变性）都写进了仓库的踩坑文档，对写仓颉网络程序有直接参考价值。</p>
+        </div>
+      </details>
+      <details>
+        <summary>换机器、换账号怎么办？</summary>
+        <div class="a">
+          <p>换机器：产物是静态单文件，带上 <code>~/.cspub/config.json</code> 即可（缺 .so 时补 <code>LD_LIBRARY_PATH</code>）。换账号：环境变量优先于配置文件，临时 <code>export</code> 一串新 Cookie 就能切号，不必改文件。</p>
+        </div>
+      </details>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<!-- ============================ 页脚 ============================ -->
+<footer class="footer">
+  <div class="wrap">
+    <div class="footer__grid">
+      <div class="footer__brand">
+        <a class="brand" href="#top">
+          <svg class="brand__mark" viewBox="0 0 64 64" aria-hidden="true">
+            <rect width="64" height="64" rx="14" fill="#12151c" stroke="rgba(255,255,255,.12)"/>
+            <path d="M15 15h15l7 7v27H15z" fill="none" stroke="#ffb224" stroke-width="3.4" stroke-linejoin="round"/>
+            <path d="M30 15v7h7" fill="none" stroke="#ffb224" stroke-width="3.4" stroke-linejoin="round"/>
+            <path d="M41 32h7M45 24l5 8-5 8" fill="none" stroke="#3fd8a4" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="53" cy="32" r="3.2" fill="#3fd8a4"/>
+          </svg>
+          cspub
+        </a>
+        <p>一份 Markdown 发遍六个技术平台。用华为仓颉语言写的发文 CLI，MIT 开源，产物是单文件。</p>
+      </div>
+      <div>
+        <h5>项目</h5>
+        <ul>
+          <li><a href="https://atomgit.com/qq8864/cspub" target="_blank" rel="noopener">AtomGit 源仓</a></li>
+          <li><a href="https://github.com/yangyongzhen/cspub" target="_blank" rel="noopener">GitHub 镜像</a></li>
+          <li><a href="https://github.com/yangyongzhen/cspub/blob/main/CHANGELOG.md" target="_blank" rel="noopener">更新日志</a></li>
+          <li><a href="https://github.com/yangyongzhen/cspub/blob/main/LICENSE" target="_blank" rel="noopener">MIT 许可</a></li>
+        </ul>
+      </div>
+      <div>
+        <h5>文档</h5>
+        <ul>
+          <li><a href="https://github.com/yangyongzhen/cspub#readme" target="_blank" rel="noopener">README</a></li>
+          <li><a href="https://github.com/yangyongzhen/cspub/blob/main/docs/%E5%8F%91%E5%B8%83%E4%B8%8E%E7%89%88%E6%9C%AC%E7%BB%B4%E6%8A%A4.md" target="_blank" rel="noopener">发布与版本维护</a></li>
+          <li><a href="https://github.com/yangyongzhen/cspub/blob/main/docs/%E5%BC%80%E5%8F%91%E6%96%87%E6%A1%A3%E4%B8%8E%E8%B8%A9%E5%9D%91%E8%AE%B0%E5%BD%95.md" target="_blank" rel="noopener">踩坑记录</a></li>
+          <li><a href="https://github.com/yangyongzhen/cspub/blob/main/AGENTS.md" target="_blank" rel="noopener">开发规范</a></li>
+        </ul>
+      </div>
+      <div>
+        <h5>配套</h5>
+        <ul>
+          <li><a href="https://atomgit.com/qq8864/cj-tauri/tree/main/examples/cookie-export" target="_blank" rel="noopener">cookie-export 工具</a></li>
+          <li><a href="https://github.com/yangyongzhen/cj-tauri" target="_blank" rel="noopener">cj-tauri 框架</a></li>
+          <li><a href="https://cangjie-lang.cn" target="_blank" rel="noopener">仓颉语言官网</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer__bottom">
+      <span>MIT Licensed · v0.2.6 · 用仓颉写的</span>
+      <span>本站无第三方依赖：手写 HTML / CSS / JS，无字体与统计外链</span>
+    </div>
+  </div>
+</footer>
+
+<button class="to-top" id="toTop" type="button" aria-label="回到顶部">
+  <svg viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></svg>
+</button>
+
+<script src="assets/app.js"></script>
+</body>
+</html>
+
+
+
