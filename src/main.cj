@@ -120,14 +120,14 @@ main(args: Array<String>): Int64 {
 }
 
 func usage(): Unit {
-    println("cspub v0.2.6 — 多平台自动发文 CLI（仓颉实现）：csdn / zhihu / baijiahao / cnblogs / juejin / oschina")
+    println("cspub v0.2.6 — 多平台自动发文 CLI（仓颉实现）：csdn / zhihu / baijiahao / cnblogs / juejin / oschina / tencent / yuque")
     println("")
     println("用法:")
     println("  cspub check   <文章.md>            解析 front-matter + 渲染统计（不联网）")
     println("  cspub publish <文章.md> [--draft]  发草稿（默认）")
     println("                      [--live]       直接发布（覆盖 front-matter 的 draft: true）")
     println("                      [--update id]  原地更新指定文章（仅 csdn）")
-    println("                      [--platform p] csdn（默认）/ zhihu / baijiahao / cnblogs / juejin / oschina")
+    println("                      [--platform p] csdn（默认）/ zhihu / baijiahao / cnblogs / juejin / oschina / tencent / yuque")
     println("  cspub whoami [platform]            校验平台凭证配置（不发网络请求）")
     println("  cspub help                         本帮助")
     println("")
@@ -141,6 +141,12 @@ func usage(): Unit {
     println("  juejin:    CSPUB_JUEJIN_COOKIE（须含 sessionid）+ 可选 CSPUB_JUEJIN_UUID/CATEGORY_ID/TAG_IDS")
     println("  oschina:   CSPUB_OSCHINA_COOKIE（须含 oscid）+ 可选 CSPUB_OSCHINA_USER_ID/CATALOG/PRIVACY")
     println("             （privacy=true 发成仅自己可见；分类默认按 front-matter 名匹配，否则取第一个）")
+    println("  tencent:   CSPUB_TENCENT_COOKIE（须含 skey 或 qcommunity_session）+ 可选 CSPUB_TENCENT_CLASSIFY_IDS")
+    println("             （腾讯云社区 addArticle，零签名；专栏 id 默认 149=技术）")
+    println("             该接口没有草稿态：--draft 只做 dry-run（打印将提交的内容，不发请求），--live 才真发")
+    println("  yuque:     CSPUB_YUQUE_TOKEN（X-Auth-Token）+ CSPUB_YUQUE_NAMESPACE（user/repo 两段式）")
+    println("             + 可选 CSPUB_YUQUE_PUBLIC（0 私密 / 1 公开 / 2 企业内公开；不配则继承知识库）")
+    println("             官方 OpenAPI v2，Markdown 原样提交；--draft 建成 public=0 的私密文档（等同草稿）")
     println("  图片外链:  CSPUB_ATOMGIT_TOKEN（+可选 CSPUB_ATOMGIT_REPO/BRANCH/DIR，默认 ${"qq8864/images"} main cspub）")
     println("             配了令牌则本地图上传 AtomGit 仓库、正文嵌 raw 外链（掘金认外链，不依赖浏览器）")
     println("             （正文图片转存走浏览器通道，需 python3+playwright+chromium）")
@@ -186,6 +192,37 @@ func loadOschinaCreds(): (String, String, String, Bool) {
         println("警告：Cookie 里没有 oscid，可能不是登录态整串（要浏览器登录 oschina.net 后复制的 Cookie）")
     }
     return (cookie, userId, catalog, privacy)
+}
+
+/** 载入腾讯云凭证：Cookie + 可选专栏 id。Cookie 缺失给可行动报错（不是笼统的「配置缺失」）。 */
+func loadTencentCreds(): (String, String) {
+    let cookie = loadConfigString("CSPUB_TENCENT_COOKIE", "tencentCookie")
+    let classify = loadConfigString("CSPUB_TENCENT_CLASSIFY_IDS", "tencentClassifyIds")
+    if (cookie.size == 0) {
+        println("错误：没有找到腾讯云开发者社区 Cookie。")
+        println("  方式一：export CSPUB_TENCENT_COOKIE='<浏览器登录 cloud.tencent.com 后复制的 Cookie 整串，须含 skey>'")
+        println("  方式二：~/.cspub/config.json 写 {\"tencentCookie\": \"...\"}")
+        println("  可选：CSPUB_TENCENT_CLASSIFY_IDS=149（专栏 id，逗号分隔，默认 149=技术）")
+        println("  注意：skey 里的 * 原样保留，不要做 URL 编码")
+    }
+    return (cookie, classify)
+}
+
+/** 载入语雀凭证：Token + namespace + 可选公开性。两者都是必填，缺哪个就点名哪个。 */
+func loadYuqueCreds(): (String, String, Int64) {
+    let token = loadConfigString("CSPUB_YUQUE_TOKEN", "yuqueToken")
+    let ns = trimAscii(loadConfigString("CSPUB_YUQUE_NAMESPACE", "yuqueNamespace"))
+    let pubCfg = loadConfigString("CSPUB_YUQUE_PUBLIC", "yuquePublic")
+    if (token.size == 0) {
+        println("错误：没有找到语雀 Token。")
+        println("  方式一：export CSPUB_YUQUE_TOKEN='<https://www.yuque.com/settings/tokens 生成的 Token>'")
+        println("  方式二：~/.cspub/config.json 写 {\"yuqueToken\": \"...\"}")
+    }
+    if (ns.size == 0) {
+        println("错误：没有找到语雀知识库 namespace。")
+        println("  export CSPUB_YUQUE_NAMESPACE='user/repo'（取知识库 URL 里那两段，单段名一定 404）")
+    }
+    return (token, ns, parseYuquePublic(pubCfg))
 }
 
 /** 载入掘金凭证：环境变量优先，其次 ~/.cspub/config.json */
@@ -266,6 +303,37 @@ func cmdWhoami(args: Array<String>): Int64 {
         }
         println("Cookie 配置可用（未联网验证；publish 时以掘金实际响应为准）")
         return 0
+    }
+    if (platform == "tencent") {
+        let (tCookie, tClassify) = loadTencentCreds()
+        if (tCookie.size == 0) {
+            return 1
+        }
+        let hasSkey = cookieValue(tCookie, "skey").size > 0
+        let hasSess = cookieValue(tCookie, "qcommunity_session").size > 0
+        println("skey              : ${if (hasSkey) { "存在" } else { "缺失" }}")
+        println("qcommunity_session: ${if (hasSess) { "存在" } else { "缺失" }}")
+        println("Cookie 长度       : ${tCookie.toArray().size} 字节")
+        println("专栏 classifyIds  : ${if (tClassify.size > 0) { tClassify } else { "默认 149（技术）" }}")
+        println("提示：登录态是否还有效只能真发一次才知道——addArticle 先校验参数再校验登录，空体返回 400 不代表 Cookie 失效")
+        return if (hasSkey || hasSess) { 0 } else { 1 }
+    }
+    if (platform == "yuque") {
+        let (qToken, qNs, qPublic) = loadYuqueCreds()
+        if (qToken.size == 0 || qNs.size == 0) {
+            return 1
+        }
+        let nsOk = yuqueNamespaceValid(qNs)
+        println("namespace : ${qNs}（${if (nsOk) { "两段式，格式正确" } else { "**格式错误**：必须 user/repo 或 group/book_slug" }}）")
+        println("public    : ${if (qPublic < 0) { "不传，继承知识库公开性" } else { "${qPublic}" }}")
+        println("Token     : 联网校验中（GET /api/v2/user，语雀是唯一能真验凭证的平台）…")
+        let (qLogin, qName) = fetchYuqueUser(qToken, false)
+        if (qLogin.size == 0) {
+            println("Token     : **校验失败**（401 = Token 无效/过期；其它 = 网络或证书问题）")
+            return 1
+        }
+        println("Token     : 有效，登录用户 ${qLogin}${if (qName.size > 0) { "（" + qName + "）" } else { "" }}")
+        return if (nsOk) { 0 } else { 1 }
     }
     if (platform == "oschina") {
         let (cookie, userId, catalog, privacy) = loadOschinaCreds()
@@ -478,8 +546,37 @@ func cmdPublish(args: Array<String>, startIdx: Int64): Int64 {
         return publishToOschina(cookie, userId, catalog, privacy, a, publishNow, insecure,
             atomgitToken, atomgitRepo, atomgitBranch, atomgitDir)
     }
+    if (platform == "tencent") {
+        let (tCookie, tClassify) = loadTencentCreds()
+        if (tCookie.size == 0) {
+            return 1
+        }
+        if (!tencentCookieHasSession(tCookie)) {
+            println("警告：Cookie 里没有 skey / qcommunity_session，多半不是登录态整串")
+        }
+        let tMode = if (publishNow) { "publish" } else { "dry-run（无草稿态）" }
+        let (tToken, tRepo, tBranch, tDir) = loadAtomgitImageConf()
+        println("发布到腾讯云开发者社区（${tMode}）…")
+        return publishToTencent(tCookie, tClassify, a, publishNow, insecure, tToken, tRepo, tBranch, tDir)
+    }
+    if (platform == "yuque") {
+        let (qToken, qNs, qPublic) = loadYuqueCreds()
+        if (qToken.size == 0 || qNs.size == 0) {
+            return 1
+        }
+        // 单段 namespace 必然 404，本地先拦，别拿一个注定失败的请求去怀疑 Token
+        if (!yuqueNamespaceValid(qNs)) {
+            println("错误：语雀 namespace `" + qNs + "` 不是两段式")
+            println("提示：必须是 user/repo 或 group/book_slug（取知识库 URL 里那两段）")
+            return 1
+        }
+        let qMode = if (publishNow) { "publish" } else { "draft（public=0 私密）" }
+        let (qImgToken, qRepo, qBranch, qDir) = loadAtomgitImageConf()
+        println("发布到语雀（${qMode}）…")
+        return publishToYuque(qToken, qNs, qPublic, a, publishNow, insecure, qImgToken, qRepo, qBranch, qDir)
+    }
     if (platform != "csdn") {
-        println("未知平台：${platform}（可选 csdn / zhihu / baijiahao / cnblogs / juejin / oschina）")
+        println("未知平台：${platform}（可选 csdn / zhihu / baijiahao / cnblogs / juejin / oschina / tencent / yuque）")
         return 1
     }
     let cookie = loadCookie()

@@ -68,18 +68,6 @@ public func normalizeJuejinBrief(desc: String, body: String): String {
     return truncateUtf8(brief, 300)
 }
 
-/** UTF-8 字符数（按首字节判界，踩坑 2） */
-public func utf8CharCount(s: String): Int64 {
-    let b = s.toArray()
-    var n: Int64 = 0
-    for (c in b) {
-        if ((c & UInt8(0xC0)) != UInt8(0x80)) {
-            n++
-        }
-    }
-    return n
-}
-
 /** 从掘金响应取 err_no / err_msg / data 下某字符串字段（id / article_id / draft_id） */
 public func parseJuejinResp(respText: String, dataKey: String): (Int64, String, String) {
     var errNo: Int64 = -1

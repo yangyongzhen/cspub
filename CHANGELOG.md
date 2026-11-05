@@ -2,6 +2,28 @@
 
 cspub 版本变更记录。版本号规则沿用 cjh：重大更新递增中间位，小更新递增末位；版本号单一真相在 `cjpm.toml` 的 `version` 字段。每条变更须带验证证据（实测输出、错误码、转存结果），不写没有证据的条目。
 
+## [Unreleased]
+
+新增两个平台通道：腾讯云开发者社区（纯 Cookie）与语雀（官方 OpenAPI v2 + Token）。两者都是「实现 + 单测」交付，**端到端发布待凭证**（本机没有这两家的登录态）。
+
+### 新增
+
+- **腾讯云开发者社区**（`src/tencent.cj`，`--platform tencent`）：直调 `POST /developer/api/article/addArticle`，纯 Cookie、零签名，比 CSDN 还简单。请求体一次给全十个字段（`title` / `content` / `plain` / `summary` / `userSummary` / `sourceType:1` / `isOriginal` / `classifyIds` / `openComment:1` / `closeTextLink:0`）；正文不足 140 字（按 UTF-8 字符）本地即拦截；`classifyIds` 空配置回落 149（技术）。该接口**没有草稿态**：`--draft` 只做 dry-run，`--live` 才真发。
+- **语雀**（`src/yuque.cj`，`--platform yuque`）：走官方 OpenAPI v2 `POST /api/v2/repos/{namespace}/docs`，`X-Auth-Token` 鉴权，Markdown 原样提交（`format: markdown`，不预渲染 HTML）。`--draft` 建成 `public=0` 私密文档（等同草稿），`--live` 用 `CSPUB_YUQUE_PUBLIC` 配置或不传（继承知识库公开性）。`whoami yuque` 真调 `GET /api/v2/user` 联网校验 Token —— 目前唯一能真验凭证的平台。
+- `util.cj:utf8CharCount`（按 UTF-8 首字节判界计数，不在汉字中间切开），供腾讯云 140 字校验使用。
+
+### 修复
+
+- `parseYuquePublic` 不再借用「非数字返回 0」的兜底：`0` 在语雀语义里是合法的「私密」，脏配置（如 `abc`）必须走 `-1`（不传该字段），否则会被静默发成私密。首轮单测 `yuquePublicParseTest` 正是因此红。
+
+### 测试
+
+- `cjpm test` **48 个用例全绿**（新增 14 个：腾讯云 7 / 语雀 7），`cjpm clean && cjpm build` **零警告**。
+
+### 未验证（明确标注，不作通过处理）
+
+- 腾讯云与语雀的**端到端发布没有跑**：本机没有这两家的登录 Cookie / Token。当前交付边界是「请求体构造 + 响应解析 + 错误映射全部有单测覆盖」，**不等于线上真能发出去**。拿到凭证后须各真发一篇（先草稿）并回显 id / 文档直链才算跑通。
+
 ## [v0.2.6] - 2026-11-05
 
 修掉三处「静默骗人」的缺陷：图片全失败照发死链、`imgs` 预演把要上传的本地图报成 skip、伴生脚本只有站在仓库根目录才找得到。

@@ -126,6 +126,19 @@ public func truncateUtf8(s: String, maxBytes: Int64): String {
     return String.fromUtf8(b[0..cut])
 }
 
+/** 统计 UTF-8 字符数（按首字节判界，与 truncateUtf8 同一套边界规则）。
+ * 平台的「不少于 N 字」按下发的字符算，用字节数会把一个汉字算成 3 个而误判成「够长」。 */
+public func utf8CharCount(s: String): Int64 {
+    let b = s.toArray()
+    var n: Int64 = 0
+    for (x in b) {
+        if ((x & UInt8(0xC0)) != UInt8(0x80)) {
+            n++
+        }
+    }
+    return n
+}
+
 /** 去 Markdown 标记的粗略纯文本（摘要用）：去代码围栏行、行首 # 与列表符、图片/链接保留文字 */
 public func stripMarkdown(md: String): String {
     let lines = md.split("\n", -1)
