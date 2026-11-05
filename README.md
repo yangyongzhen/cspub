@@ -9,6 +9,8 @@
 [![Language](https://img.shields.io/badge/%E8%AF%AD%E8%A8%80-%E4%BB%93%E9%A2%89%201.0.5%2B-ff69b4)](https://cangjie-lang.cn)
 [![License](https://img.shields.io/badge/%E8%AE%B8%E5%8F%AF%E8%AF%81-MIT-green)](./LICENSE)
 [![Platform](https://img.shields.io/badge/%E5%B9%B3%E5%8F%B0-Linux%20%E5%AE%9E%E6%B5%8B-blue)](#已知限制)
+[![GitHub](https://img.shields.io/badge/GitHub-yangyongzhen%2Fcspub-181717?logo=github)](https://github.com/yangyongzhen/cspub)
+[![AtomGit](https://img.shields.io/badge/AtomGit-qq8864%2Fcspub-fc6d26)](https://atomgit.com/qq8864/cspub)
 
 </div>
 
@@ -223,6 +225,11 @@ draft: true                # 缺省 true；publish 时 --live 可覆盖
 
 - **版本号**：`cjpm.toml` 的 `version` 字段是单一真相；发版时同步更新 `CHANGELOG.md`，规则沿用 cjh——重大更新递增中间位、小更新递增末位。
 - **变更记录**：`CHANGELOG.md` 按 Keep a Changelog 风格维护（新增 / 变更 / 修复 / 文档 / 构建 分节），每条带验证证据（实测输出、错误码、转存结果），不写没有证据的条目。
+- **仓库与远程（双远程）**：源仓在 [AtomGit](https://atomgit.com/qq8864/cspub)（`origin`），
+  [GitHub](https://github.com/yangyongzhen/cspub) 是镜像（`github`）。发版时两边都推：
+  `git push origin main && git push github main`。注意本机 git 配置了
+  `url.https://ghfast.top/https://github.com/.insteadof https://github.com/`，推 GitHub 实际走镜像加速，
+  `git remote -v` 里显示的也是加速地址，属正常。
 - **发布流程**：`cjpm build` → 产物入 `dist/`（tar.gz + SHA256SUMS）→ 打 tag（`v0.1.0` 格式）→ 基于 tag 发 release 并附产物。详见 `docs/发布与版本维护.md`。
 - **开发规范**：见 [AGENTS.md](./AGENTS.md)——变更交付门禁、代码组织原则、踩坑沉淀与文档规范。
 
@@ -230,7 +237,8 @@ draft: true                # 缺省 true；publish 时 --live 可覆盖
 
 - 表格 / 脚注 / 任务列表等扩展 Markdown 不渲染（原样进段落）；
 - 更新文章只支持 `--update <id>`（id 在首次发布成功后回显）；
-- 未做多平台（掘金/博客园接口形状不同，要了再加）；
+- **开源中国公开可见性**：发布接口回了博客 id 也不代表立刻公开（新号/首篇走人工审核），公开页可能仍是
+  「找不到您访问的页面」；判可见性只能靠浏览器渲染，`curl` 该路由一律 200 无信息量；
 - **Windows 侧**：`./scripts/winbuild.sh` 交叉编译产出 exe（8.2 MB，mingw strip 后）+ 自包含 zip（exe + libboundscheck / libcangjie-runtime / libcrypto-3-x64 / libssl-3-x64 四 DLL，解压同目录即用）；发文链路未在真机 Windows 实测；
 - **CSDN 每日发文限额**：实测该账号每天只能发 1 篇，额度用满时 `saveArticle` 直接回
   `{"code":400300012,"msg":"今天发表文章数量已达到限制的1篇。"}`；存草稿（`status=2` / `pubStatus=draft`）
