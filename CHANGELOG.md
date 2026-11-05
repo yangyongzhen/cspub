@@ -4,13 +4,15 @@ cspub 版本变更记录。版本号规则沿用 cjh：重大更新递增中间�
 
 ## [Unreleased]
 
-新增两个平台通道：腾讯云开发者社区（纯 Cookie）与语雀（官方 OpenAPI v2 + Token）。两者都是「实现 + 单测」交付，**端到端发布待凭证**（本机没有这两家的登录态）。
+新增三个平台通道：腾讯云开发者社区（纯 Cookie）、语雀（官方 OpenAPI v2 + Token）、头条号（模拟后台 mp/agw 接口）。三者都是「实现 + 单测」交付，**端到端发布待凭证**（本机没有这三家的登录态）。
 
 ### 新增
 
 - **腾讯云开发者社区**（`src/tencent.cj`，`--platform tencent`）：直调 `POST /developer/api/article/addArticle`，纯 Cookie、零签名，比 CSDN 还简单。请求体一次给全十个字段（`title` / `content` / `plain` / `summary` / `userSummary` / `sourceType:1` / `isOriginal` / `classifyIds` / `openComment:1` / `closeTextLink:0`）；正文不足 140 字（按 UTF-8 字符）本地即拦截；`classifyIds` 空配置回落 149（技术）。该接口**没有草稿态**：`--draft` 只做 dry-run，`--live` 才真发。
 - **语雀**（`src/yuque.cj`，`--platform yuque`）：走官方 OpenAPI v2 `POST /api/v2/repos/{namespace}/docs`，`X-Auth-Token` 鉴权，Markdown 原样提交（`format: markdown`，不预渲染 HTML）。`--draft` 建成 `public=0` 私密文档（等同草稿），`--live` 用 `CSPUB_YUQUE_PUBLIC` 配置或不传（继承知识库公开性）。`whoami yuque` 真调 `GET /api/v2/user` 联网校验 Token —— 目前唯一能真验凭证的平台。
 - `util.cj:utf8CharCount`（按 UTF-8 首字节判界计数，不在汉字中间切开），供腾讯云 140 字校验使用。
+- **头条号**（`src/toutiao.cj`，`--platform toutiao`）：无开放 API，模拟后台 `mp/agw` 三条实测端点——发文 `POST /mp/agw/article/publish`、图片 `POST /mp/agw/article_material/photo/upload_picture`（multipart 字段 `upfile`）、媒体信息 `GET /mp/agw/media/get_media_info`；鉴权是 Cookie + `X-CSRFToken`（默认自动取 cookie 的 `csrftoken`）。标题按 UTF-8 字符校验 `5~30` 字；`--draft` 对应 `save=1` 存草稿、`--live` 对应 `save=0` 发布。
+- **头条图片转存管线**（`rehostToutiaoImages` / `uploadToutiaoImage` / `collectImgSrcs` / `rewriteHtmlImgs`）：头条是唯一「外链也必须转存」的平台——正文任一非头条域名图片会让整篇被拒 `7115 图片uri非法`。实现为：正文所有 `<img>` 逐张下载 → multipart 上传头条 CDN → 按 `origin_web_uri` 把标签改写成 `<img src="<头条链接>" web_uri="<头条uri>">`；失败张数 > 0 时在提交前明确告警「本次很可能被 7115 拒稿」，不静默照发。
 
 ### 修复
 
@@ -18,11 +20,12 @@ cspub 版本变更记录。版本号规则沿用 cjh：重大更新递增中间�
 
 ### 测试
 
-- `cjpm test` **48 个用例全绿**（新增 14 个：腾讯云 7 / 语雀 7），`cjpm clean && cjpm build` **零警告**。
+- `cjpm test` **57 个用例全绿**（新增 23 个：腾讯云 7 / 语雀 7 / 头条号 9），`cjpm clean && cjpm build` **零警告**。
 
 ### 未验证（明确标注，不作通过处理）
 
 - 腾讯云与语雀的**端到端发布没有跑**：本机没有这两家的登录 Cookie / Token。当前交付边界是「请求体构造 + 响应解析 + 错误映射全部有单测覆盖」，**不等于线上真能发出去**。拿到凭证后须各真发一篇（先草稿）并回显 id / 文档直链才算跑通。
+- 头条号的**端到端发布与图片上传没有跑**：本机没有头条登录态。已单测覆盖的是「请求体构造 / 响应解析 / 登录码与 7115 的区分 / 标题字符区间 / img 标签改写」；**未经真机验证的三项**须拿到 Cookie 后逐项确认：①上传响应里 `state == "SUCCESS"` 的判定与 `origin_web_uri` 字段名，②改写后的 `<img src web_uri>` 形态能否被编辑器正常保存，③`save=1` 是否真的落成草稿。跑通凭证：`--draft` 回显 `pgc_id` + 后台草稿直链，`--live` 回显 `https://www.toutiao.com/article/<pgc_id>/` 且正文图片正常显示。
 
 ## [v0.2.6] - 2026-11-05
 

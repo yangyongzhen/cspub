@@ -120,14 +120,14 @@ main(args: Array<String>): Int64 {
 }
 
 func usage(): Unit {
-    println("cspub v0.2.6 — 多平台自动发文 CLI（仓颉实现）：csdn / zhihu / baijiahao / cnblogs / juejin / oschina / tencent / yuque")
+    println("cspub v0.2.6 — 多平台自动发文 CLI（仓颉实现）：csdn / zhihu / baijiahao / cnblogs / juejin / oschina / tencent / yuque / toutiao")
     println("")
     println("用法:")
     println("  cspub check   <文章.md>            解析 front-matter + 渲染统计（不联网）")
     println("  cspub publish <文章.md> [--draft]  发草稿（默认）")
     println("                      [--live]       直接发布（覆盖 front-matter 的 draft: true）")
     println("                      [--update id]  原地更新指定文章（仅 csdn）")
-    println("                      [--platform p] csdn（默认）/ zhihu / baijiahao / cnblogs / juejin / oschina / tencent / yuque")
+    println("                      [--platform p] csdn（默认）/ zhihu / baijiahao / cnblogs / juejin / oschina / tencent / yuque / toutiao")
     println("  cspub whoami [platform]            校验平台凭证配置（不发网络请求）")
     println("  cspub help                         本帮助")
     println("")
@@ -147,6 +147,10 @@ func usage(): Unit {
     println("  yuque:     CSPUB_YUQUE_TOKEN（X-Auth-Token）+ CSPUB_YUQUE_NAMESPACE（user/repo 两段式）")
     println("             + 可选 CSPUB_YUQUE_PUBLIC（0 私密 / 1 公开 / 2 企业内公开；不配则继承知识库）")
     println("             官方 OpenAPI v2，Markdown 原样提交；--draft 建成 public=0 的私密文档（等同草稿）")
+    println("  toutiao:   CSPUB_TOUTIAO_COOKIE（须含 sessionid 或 tt_webid）+ 可选 CSPUB_TOUTIAO_CSRF")
+    println("             模拟后台 mp/agw 接口，X-CSRFToken 默认自动取 cookie 的 csrftoken")
+    println("             图片硬约束：正文每张图都要转存头条 CDN，任何非头条域名 → 整篇拒稿 7115")
+    println("             头条无开放 API，属模拟操作；--draft = save=1 存草稿，--live = save=0 发布")
     println("  图片外链:  CSPUB_ATOMGIT_TOKEN（+可选 CSPUB_ATOMGIT_REPO/BRANCH/DIR，默认 ${"qq8864/images"} main cspub）")
     println("             配了令牌则本地图上传 AtomGit 仓库、正文嵌 raw 外链（掘金认外链，不依赖浏览器）")
     println("             （正文图片转存走浏览器通道，需 python3+playwright+chromium）")
@@ -223,6 +227,21 @@ func loadYuqueCreds(): (String, String, Int64) {
         println("  export CSPUB_YUQUE_NAMESPACE='user/repo'（取知识库 URL 里那两段，单段名一定 404）")
     }
     return (token, ns, parseYuquePublic(pubCfg))
+}
+
+/** 载入头条号凭证：Cookie + X-CSRFToken。CSRF 默认从 cookie 的 csrftoken 取，
+ * 允许显式覆盖（个别账号只在请求头里认 token，cookie 里没有）。 */
+func loadToutiaoCreds(): (String, String) {
+    let cookie = loadConfigString("CSPUB_TOUTIAO_COOKIE", "toutiaoCookie")
+    let csrfCfg = trimAscii(loadConfigString("CSPUB_TOUTIAO_CSRF", "toutiaoCsrf"))
+    if (cookie.size == 0) {
+        println("错误：没有找到头条号 Cookie。")
+        println("  方式一：export CSPUB_TOUTIAO_COOKIE='<浏览器登录 mp.toutiao.com 后复制的 Cookie 整串，须含 sessionid>'")
+        println("  方式二：~/.cspub/config.json 写 {\"toutiaoCookie\": \"...\"}")
+        println("  可选：CSPUB_TOUTIAO_CSRF=<X-CSRFToken>（默认自动取 cookie 里的 csrftoken）")
+    }
+    let csrf = if (csrfCfg.size > 0) { csrfCfg } else { toutiaoCsrfToken(cookie) }
+    return (cookie, csrf)
 }
 
 /** 载入掘金凭证：环境变量优先，其次 ~/.cspub/config.json */
@@ -334,6 +353,21 @@ func cmdWhoami(args: Array<String>): Int64 {
         }
         println("Token     : 有效，登录用户 ${qLogin}${if (qName.size > 0) { "（" + qName + "）" } else { "" }}")
         return if (nsOk) { 0 } else { 1 }
+    }
+    if (platform == "toutiao") {
+        let (tCookie, tCsrf) = loadToutiaoCreds()
+        if (tCookie.size == 0) {
+            return 1
+        }
+        let hasSess = cookieValue(tCookie, "sessionid").size > 0
+        let hasWeb = cookieValue(tCookie, "tt_webid").size > 0
+        println("sessionid   : ${if (hasSess) { "存在" } else { "缺失" }}")
+        println("tt_webid    : ${if (hasWeb) { "存在" } else { "缺失" }}")
+        println("X-CSRFToken : ${if (tCsrf.size > 0) { "已取得（${tCsrf.size} 字节）" } else { "**缺失**：cookie 里没有 csrftoken" }}")
+        println("Cookie 长度 : ${tCookie.toArray().size} 字节")
+        println("提示：头条无开放发布 API，本工具模拟后台 mp/agw 接口；正文任一非头条域名图片都会整篇拒稿（7115）")
+        println("      --draft = save=1 存草稿；--live = save=0 发布（有审核队列，约每日 4 篇上限）")
+        return if (hasSess || hasWeb) { 0 } else { 1 }
     }
     if (platform == "oschina") {
         let (cookie, userId, catalog, privacy) = loadOschinaCreds()
@@ -575,8 +609,25 @@ func cmdPublish(args: Array<String>, startIdx: Int64): Int64 {
         println("发布到语雀（${qMode}）…")
         return publishToYuque(qToken, qNs, qPublic, a, publishNow, insecure, qImgToken, qRepo, qBranch, qDir)
     }
+    if (platform == "toutiao") {
+        let (tCookie, tCsrf) = loadToutiaoCreds()
+        if (tCookie.size == 0) {
+            return 1
+        }
+        if (!toutiaoCookieHasSession(tCookie)) {
+            println("警告：Cookie 里没有 sessionid / tt_webid，多半不是登录态整串")
+        }
+        if (tCsrf.size == 0) {
+            println("警告：没能从 cookie 取到 csrftoken，X-CSRFToken 头将缺失（头条风控多半会挡）")
+            println("      可显式给：CSPUB_TOUTIAO_CSRF=<后台请求里的 X-CSRFToken>")
+        }
+        let tMode = if (publishNow) { "publish（save=0）" } else { "draft（save=1）" }
+        let (tToken, tRepo, tBranch, tDir) = loadAtomgitImageConf()
+        println("发布到头条号（${tMode}）…")
+        return publishToToutiao(tCookie, tCsrf, a, publishNow, insecure, tToken, tRepo, tBranch, tDir)
+    }
     if (platform != "csdn") {
-        println("未知平台：${platform}（可选 csdn / zhihu / baijiahao / cnblogs / juejin / oschina / tencent / yuque）")
+        println("未知平台：${platform}（可选 csdn / zhihu / baijiahao / cnblogs / juejin / oschina / tencent / yuque / toutiao）")
         return 1
     }
     let cookie = loadCookie()

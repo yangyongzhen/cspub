@@ -4,16 +4,18 @@
 
 **多平台文章发布助手 —— 用华为仓颉语言实现**
 
-一份 Markdown（带 front-matter），一条命令发到多个平台：CSDN / 知乎 / 百家号 / 博客园 / 掘金 / 开源中国 / 腾讯云开发者社区 / 语雀，自动签名/登录、自动转存图片、默认发草稿。
+一份 Markdown（带 front-matter），一条命令发到多个平台：CSDN / 知乎 / 百家号 / 博客园 / 掘金 / 开源中国 / 腾讯云开发者社区 / 语雀 / 头条号，自动签名/登录、自动转存图片、默认发草稿。
 
 🌐 **官网** <https://yangyongzhen.github.io/cspub/> —— 平台矩阵、流水线、图片转存策略与实测数据都在那；静态站零第三方依赖（含源码 `website/`）。
+
+> 国内 AtomGit 托管：[atomgit.com/qq8864/cspub](https://atomgit.com/qq8864/cspub)，与 GitHub 镜像同步更新（同一提交双端推送，ref 一致）。
 
 [![Language](https://img.shields.io/badge/%E8%AF%AD%E8%A8%80-%E4%BB%93%E9%A2%89%201.0.5%2B-ff69b4)](https://cangjie-lang.cn)
 [![License](https://img.shields.io/badge/%E8%AE%B8%E5%8F%AF%E8%AF%81-MIT-green)](./LICENSE)
 [![Platform](https://img.shields.io/badge/%E5%B9%B3%E5%8F%B0-Linux%20%E5%AE%9E%E6%B5%8B-blue)](#已知限制)
 [![官网](https://img.shields.io/badge/%E5%AE%98%E7%BD%91-yangyongzhen.github.io%2Fcspub-ffb224)](https://yangyongzhen.github.io/cspub/)
 [![GitHub](https://img.shields.io/badge/GitHub-yangyongzhen%2Fcspub-181717?logo=github)](https://github.com/yangyongzhen/cspub)
-[![AtomGit](https://img.shields.io/badge/AtomGit-qq8864%2Fcspub-fc6d26)](https://atomgit.com/qq8864/cspub)
+[![AtomGit](https://atomgit.com/qq8864/cspub/star/new_badge.svg)](https://atomgit.com/qq8864/cspub)
 
 </div>
 
@@ -26,6 +28,7 @@ cspub publish 我的文章.md --platform juejin     # 掘金（Cookie 两步流�
 cspub publish 我的文章.md --platform oschina    # 开源中国（Cookie 直通站点接口；图片走它自带图床）
 cspub publish 我的文章.md --platform tencent    # 腾讯云开发者社区（Cookie 零签名；--draft 为 dry-run，无草稿态）
 cspub publish 我的文章.md --platform yuque      # 语雀（官方 OpenAPI v2 + Token；--draft 建成私密文档）
+cspub publish 我的文章.md --platform toutiao    # 头条号（Cookie + X-CSRFToken；图片必须全转存头条 CDN）
 cspub publish 我的文章.md --live                # 直接发布
 ```
 
@@ -34,7 +37,7 @@ cspub publish 我的文章.md --live                # 直接发布
 1. 读 Markdown + front-matter（title / tags / categories / desc / draft / origin_url）；
 2. **按平台自动转存图片**：CSDN 外链图转 CSDN 图床（防盗链），知乎图转知乎 CDN（知乎剥离站外图）；
 3. 把 Markdown 渲染成 HTML（各平台编辑器都要求发渲染后的 HTML，不是 Markdown 源文）；
-4. 按平台鉴权发文：CSDN 走网关 HMAC-SHA256 签名（`x-ca-*`）+ Cookie；知乎走 Cookie 草稿接口三步流；百家号走 Cookie 浏览器自动化（Playwright 伴生脚本）或官方开发者凭证；腾讯云开发者社区直调 `addArticle`（纯 Cookie、零签名）；语雀走官方 OpenAPI v2（`X-Auth-Token`，Markdown 原样提交）；
+4. 按平台鉴权发文：CSDN 走网关 HMAC-SHA256 签名（`x-ca-*`）+ Cookie；知乎走 Cookie 草稿接口三步流；百家号走 Cookie 浏览器自动化（Playwright 伴生脚本）或官方开发者凭证；腾讯云开发者社区直调 `addArticle`（纯 Cookie、零签名）；语雀走官方 OpenAPI v2（`X-Auth-Token`，Markdown 原样提交）；头条号模拟后台 `mp/agw` 接口（Cookie + `X-CSRFToken`）；
 5. 回显文章链接与 id（CSDN 支持更新用 `--update <id>`）。
 
 主链路全部用仓颉标准库 + stdx 实现（HMAC / Base64 / HTTP / JSON），零第三方依赖；仅百家号 Cookie 通道需要一个 Playwright 伴生脚本。
@@ -93,6 +96,7 @@ cjpm build
 | oschina | `CSPUB_OSCHINA_COOKIE`（+ 可选 `CSPUB_OSCHINA_USER_ID/CATALOG/PRIVACY`） | `oschinaCookie` 等 | 登录 oschina.net → F12 → 复制 Cookie 整串（须含 `oscid`）。**图片直接用它自带图床**（`oscimg.oschina.net`），无需额外配置；分类默认按 front-matter `categories` 名匹配，匹配不到取账号第一个分类 |
 | tencent | `CSPUB_TENCENT_COOKIE`（+ 可选 `CSPUB_TENCENT_CLASSIFY_IDS`） | `tencentCookie` / `tencentClassifyIds` | 登录 cloud.tencent.com → F12 → 复制 Cookie 整串（须含 `skey` 或 `qcommunity_session`；`skey` 里的 `*` 原样保留，**不要 URL 编码**）。专栏 id 默认 149=技术，新账号要先在社区后台建专栏（审核 1~3 天）。正文纯文本不少于 140 字 |
 | yuque | `CSPUB_YUQUE_TOKEN` + `CSPUB_YUQUE_NAMESPACE`（+ 可选 `CSPUB_YUQUE_PUBLIC`） | `yuqueToken` / `yuqueNamespace` / `yuquePublic` | 官方 OpenAPI v2：去 <https://www.yuque.com/settings/tokens> 生成 Token，namespace 取知识库 URL 的两段（`user/repo`，**单段一定 404**）。`public` 不配则继承知识库公开性；`--draft` 建成 `public=0` 私密文档 |
+| toutiao | `CSPUB_TOUTIAO_COOKIE`（+ 可选 `CSPUB_TOUTIAO_CSRF`） | `toutiaoCookie` / `toutiaoCsrf` | 登录 mp.toutiao.com → F12 → 复制 Cookie 整串（须含 `sessionid` 或 `tt_webid`）。`X-CSRFToken` 默认自动取 cookie 里的 `csrftoken`，取不到才需要显式给 `CSPUB_TOUTIAO_CSRF`。**标题 5~30 字**；**正文每张图都必须转存头条 CDN**——任何非头条域名图片会让整篇被拒（`7115 图片uri非法`），所以头条是唯一「外链也强制转存」的平台 |
 | 掘金图片（可选） | `CSPUB_ATOMGIT_TOKEN`（+ `CSPUB_ATOMGIT_REPO/BRANCH/DIR`） | `atomgitToken` 等 | AtomGit 个人访问令牌；默认仓库 `qq8864/images`、分支 `main`、目录 `cspub`。配了它本地图上传图床、正文嵌 raw 外链，不依赖浏览器 |
 | 图片门禁（可选） | `CSPUB_STRICT_IMAGES` | — | 设 `1/true/yes` 时，转存后正文仍有本地图片未转存就**中止发布**（返回码 1）；默认不设＝best-effort，只打 `⚠⚠` 告警照发 |
 | 伴生脚本目录（可选） | `CSPUB_SCRIPT_DIR` | — | 百家号/掘金的 `scripts/*.py` 查找根。不设时依次找：当前工作目录 → 可执行文件目录向上回溯 5 级，所以**不再要求必须在仓库根目录运行** |
