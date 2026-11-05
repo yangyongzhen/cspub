@@ -6,9 +6,12 @@
 
 一份 Markdown（带 front-matter），一条命令发到多个平台：CSDN / 知乎 / 百家号 / 博客园 / 掘金 / 开源中国，自动签名/登录、自动转存图片、默认发草稿。
 
+🌐 **官网** <https://yangyongzhen.github.io/cspub/> —— 六平台矩阵、流水线、图片转存策略与实测数据都在那；静态站零第三方依赖（含源码 `website/`）。
+
 [![Language](https://img.shields.io/badge/%E8%AF%AD%E8%A8%80-%E4%BB%93%E9%A2%89%201.0.5%2B-ff69b4)](https://cangjie-lang.cn)
 [![License](https://img.shields.io/badge/%E8%AE%B8%E5%8F%AF%E8%AF%81-MIT-green)](./LICENSE)
 [![Platform](https://img.shields.io/badge/%E5%B9%B3%E5%8F%B0-Linux%20%E5%AE%9E%E6%B5%8B-blue)](#已知限制)
+[![官网](https://img.shields.io/badge/%E5%AE%98%E7%BD%91-yangyongzhen.github.io%2Fcspub-ffb224)](https://yangyongzhen.github.io/cspub/)
 [![GitHub](https://img.shields.io/badge/GitHub-yangyongzhen%2Fcspub-181717?logo=github)](https://github.com/yangyongzhen/cspub)
 [![AtomGit](https://img.shields.io/badge/AtomGit-qq8864%2Fcspub-fc6d26)](https://atomgit.com/qq8864/cspub)
 
