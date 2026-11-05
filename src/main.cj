@@ -120,14 +120,14 @@ main(args: Array<String>): Int64 {
 }
 
 func usage(): Unit {
-    println("cspub v0.2.6 — 多平台自动发文 CLI（仓颉实现）：csdn / zhihu / baijiahao / cnblogs / juejin / oschina / tencent / yuque / toutiao")
+    println("cspub v0.2.6 — 多平台自动发文 CLI（仓颉实现）：csdn / zhihu / baijiahao / cnblogs / juejin / oschina / tencent / yuque / toutiao / segmentfault")
     println("")
     println("用法:")
     println("  cspub check   <文章.md>            解析 front-matter + 渲染统计（不联网）")
     println("  cspub publish <文章.md> [--draft]  发草稿（默认）")
     println("                      [--live]       直接发布（覆盖 front-matter 的 draft: true）")
     println("                      [--update id]  原地更新指定文章（仅 csdn）")
-    println("                      [--platform p] csdn（默认）/ zhihu / baijiahao / cnblogs / juejin / oschina / tencent / yuque / toutiao")
+    println("                      [--platform p] csdn（默认）/ zhihu / baijiahao / cnblogs / juejin / oschina / tencent / yuque / toutiao / segmentfault")
     println("  cspub whoami [platform]            校验平台凭证配置（不发网络请求）")
     println("  cspub help                         本帮助")
     println("")
@@ -151,6 +151,9 @@ func usage(): Unit {
     println("             模拟后台 mp/agw 接口，X-CSRFToken 默认自动取 cookie 的 csrftoken")
     println("             图片硬约束：正文每张图都要转存头条 CDN，任何非头条域名 → 整篇拒稿 7115")
     println("             头条无开放 API，属模拟操作；--draft = save=1 存草稿，--live = save=0 发布")
+    println("  segmentfault: CSPUB_SEGMENTFAULT_COOKIE（思否登录后的整串 Cookie）")
+    println("             走 /gateway 网关，零签名；Token 于发文时从写文章页 __NEXT_DATA__ 实时取")
+    println("             正文是 HTML 富文本，--draft 存草稿箱、--live 直接发布")
     println("  图片外链:  CSPUB_ATOMGIT_TOKEN（+可选 CSPUB_ATOMGIT_REPO/BRANCH/DIR，默认 ${"qq8864/images"} main cspub）")
     println("             配了令牌则本地图上传 AtomGit 仓库、正文嵌 raw 外链（掘金认外链，不依赖浏览器）")
     println("             （正文图片转存走浏览器通道，需 python3+playwright+chromium）")
@@ -242,6 +245,19 @@ func loadToutiaoCreds(): (String, String) {
     }
     let csrf = if (csrfCfg.size > 0) { csrfCfg } else { toutiaoCsrfToken(cookie) }
     return (cookie, csrf)
+}
+
+/** 载入思否凭证：只需要 Cookie 整串。思否的 Token 不在 Cookie 里（发文时从写文章页实时取），
+ * 所以这里无法像别家那样校验某个 cookie 字段——登录与否由 publish 取 token 时判定。 */
+func loadSegmentfaultCreds(): String {
+    let cookie = loadConfigString("CSPUB_SEGMENTFAULT_COOKIE", "segmentfaultCookie")
+    if (cookie.size == 0) {
+        println("错误：没有找到思否 Cookie。")
+        println("  方式一：export CSPUB_SEGMENTFAULT_COOKIE='<浏览器登录 segmentfault.com 后复制的 Cookie 整串>'")
+        println("  方式二：~/.cspub/config.json 写 {\"segmentfaultCookie\": \"...\"}")
+        println("  注意：思否没有可自查的登录 cookie 字段，真正的 Token 在发文时从写文章页取")
+    }
+    return cookie
 }
 
 /** 载入掘金凭证：环境变量优先，其次 ~/.cspub/config.json */
@@ -368,6 +384,25 @@ func cmdWhoami(args: Array<String>): Int64 {
         println("提示：头条无开放发布 API，本工具模拟后台 mp/agw 接口；正文任一非头条域名图片都会整篇拒稿（7115）")
         println("      --draft = save=1 存草稿；--live = save=0 发布（有审核队列，约每日 4 篇上限）")
         return if (hasSess || hasWeb) { 0 } else { 1 }
+    }
+    if (platform == "segmentfault") {
+        let sfCookie = loadSegmentfaultCreds()
+        if (sfCookie.size == 0) {
+            return 1
+        }
+        println("Cookie 长度 : ${sfCookie.toArray().size} 字节")
+        println("Token       : 联网校验中（GET /write 抠 serverData.Token）…")
+        let (sfToken, sfStatus) = fetchSegmentfaultToken(sfCookie, false)
+        if (sfToken.size == 0) {
+            if (sfStatus != 200) {
+                println("Token       : **取页失败**（HTTP ${sfStatus}）——网络或证书问题，可试 --insecure")
+            } else {
+                println("Token       : **空**——Cookie 不是登录态（重新登录 segmentfault.com 后复制整串）")
+            }
+            return 1
+        }
+        println("Token       : 已取得（${sfToken.size} 字节），Cookie 是有效登录态")
+        return 0
     }
     if (platform == "oschina") {
         let (cookie, userId, catalog, privacy) = loadOschinaCreds()
@@ -626,8 +661,19 @@ func cmdPublish(args: Array<String>, startIdx: Int64): Int64 {
         println("发布到头条号（${tMode}）…")
         return publishToToutiao(tCookie, tCsrf, a, publishNow, insecure, tToken, tRepo, tBranch, tDir)
     }
+    if (platform == "segmentfault") {
+        let sfCookie = loadSegmentfaultCreds()
+        if (sfCookie.size == 0) {
+            return 1
+        }
+        let sfMode = if (publishNow) { "publish" } else { "draft" }
+        let (sfImgToken, sfRepo, sfBranch, sfDir) = loadAtomgitImageConf()
+        println("发布到 SegmentFault 思否（${sfMode}）…")
+        return publishToSegmentfault(sfCookie, a, publishNow, insecure,
+            sfImgToken, sfRepo, sfBranch, sfDir)
+    }
     if (platform != "csdn") {
-        println("未知平台：${platform}（可选 csdn / zhihu / baijiahao / cnblogs / juejin / oschina / tencent / yuque / toutiao）")
+        println("未知平台：${platform}（可选 csdn / zhihu / baijiahao / cnblogs / juejin / oschina / tencent / yuque / toutiao / segmentfault）")
         return 1
     }
     let cookie = loadCookie()

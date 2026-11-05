@@ -4,7 +4,7 @@ cspub 版本变更记录。版本号规则沿用 cjh：重大更新递增中间�
 
 ## [Unreleased]
 
-新增三个平台通道：腾讯云开发者社区（纯 Cookie）、语雀（官方 OpenAPI v2 + Token）、头条号（模拟后台 mp/agw 接口）。三者都是「实现 + 单测」交付，**端到端发布待凭证**（本机没有这三家的登录态）。
+新增四个平台通道：腾讯云开发者社区（纯 Cookie）、语雀（官方 OpenAPI v2 + Token）、头条号（模拟后台 mp/agw 接口）、SegmentFault 思否（`/gateway` 网关 + 页面取 Token）。四者都是「实现 + 单测」交付，**端到端发布待凭证**（本机没有这四家的登录态）。
 
 ### 新增
 
@@ -13,6 +13,7 @@ cspub 版本变更记录。版本号规则沿用 cjh：重大更新递增中间�
 - `util.cj:utf8CharCount`（按 UTF-8 首字节判界计数，不在汉字中间切开），供腾讯云 140 字校验使用。
 - **头条号**（`src/toutiao.cj`，`--platform toutiao`）：无开放 API，模拟后台 `mp/agw` 三条实测端点——发文 `POST /mp/agw/article/publish`、图片 `POST /mp/agw/article_material/photo/upload_picture`（multipart 字段 `upfile`）、媒体信息 `GET /mp/agw/media/get_media_info`；鉴权是 Cookie + `X-CSRFToken`（默认自动取 cookie 的 `csrftoken`）。标题按 UTF-8 字符校验 `5~30` 字；`--draft` 对应 `save=1` 存草稿、`--live` 对应 `save=0` 发布。
 - **头条图片转存管线**（`rehostToutiaoImages` / `uploadToutiaoImage` / `collectImgSrcs` / `rewriteHtmlImgs`）：头条是唯一「外链也必须转存」的平台——正文任一非头条域名图片会让整篇被拒 `7115 图片uri非法`。实现为：正文所有 `<img>` 逐张下载 → multipart 上传头条 CDN → 按 `origin_web_uri` 把标签改写成 `<img src="<头条链接>" web_uri="<头条uri>">`；失败张数 > 0 时在提交前明确告警「本次很可能被 7115 拒稿」，不静默照发。
+- **SegmentFault 思否**（`src/segmentfault.cj`，`--platform segmentfault`）：走前端自用的 `/gateway` 网关，零签名。发文 `POST /gateway/article`、存草稿 `POST /gateway/draft`（**两个不同端点**，所以 `--draft` 真能落草稿箱）。鉴权是三件套：Cookie + `Token` 头 + `Authorization: Bearer <同值>`，其中 Token **不在 Cookie 里**，发文时从写文章页 `__NEXT_DATA__` 的 `serverData.Token` 实时取（`extractSegmentfaultToken`，未登录时空串即判「Cookie 不是登录态」）。请求必带 `Origin`/`Referer`，否则先被 CSRF 网关挡成 403。正文渲染成 HTML 富文本（`text` 字段），`tags` 传数组；图片需公网 URL，配 `CSPUB_ATOMGIT_TOKEN` 自动转 AtomGit 外链，未配只警告不阻断。错误分诊写死：401=未登录/Token 失效、403=CSRF、404=路径变了（明确提示「不是 Cookie 问题」）。`whoami segmentfault` 会联网 GET `/write` 抠 Token 做真实登录态校验。
 
 ### 修复
 
@@ -20,12 +21,14 @@ cspub 版本变更记录。版本号规则沿用 cjh：重大更新递增中间�
 
 ### 测试
 
-- `cjpm test` **57 个用例全绿**（新增 23 个：腾讯云 7 / 语雀 7 / 头条号 9），`cjpm clean && cjpm build` **零警告**。
+- `cjpm test` **67 个用例全绿**（新增 33 个：腾讯云 7 / 语雀 7 / 头条号 9 / SegmentFault 10），`cjpm clean && cjpm build` **零警告**。
 
 ### 未验证（明确标注，不作通过处理）
 
 - 腾讯云与语雀的**端到端发布没有跑**：本机没有这两家的登录 Cookie / Token。当前交付边界是「请求体构造 + 响应解析 + 错误映射全部有单测覆盖」，**不等于线上真能发出去**。拿到凭证后须各真发一篇（先草稿）并回显 id / 文档直链才算跑通。
 - 头条号的**端到端发布与图片上传没有跑**：本机没有头条登录态。已单测覆盖的是「请求体构造 / 响应解析 / 登录码与 7115 的区分 / 标题字符区间 / img 标签改写」；**未经真机验证的三项**须拿到 Cookie 后逐项确认：①上传响应里 `state == "SUCCESS"` 的判定与 `origin_web_uri` 字段名，②改写后的 `<img src web_uri>` 形态能否被编辑器正常保存，③`save=1` 是否真的落成草稿。跑通凭证：`--draft` 回显 `pgc_id` + 后台草稿直链，`--live` 回显 `https://www.toutiao.com/article/<pgc_id>/` 且正文图片正常显示。
+- SegmentFault 的**端到端发布没有跑**：本机没有思否登录态。已单测覆盖「token 抠取（含未登录空串与锚点缺失）/ 请求体字段与 tags 数组 / cover 空值不带 / HTML 转义 / 响应解析（字符串错误体、对象、坏 JSON）」。**未经真机验证的三项**：①成功响应体的具体形状——正因未知，成功判据已放宽为「HTTP 200 即视为已提交，抠到 id 才打印」，不会把已发出的文章报成失败；②`tags` 传**标签名数组**（编辑器传入形态），若后端要求标签 id 会回参数错误；③本模块**没有**调用 `/gateway/image` 上传本地图片（multipart 字段名登录后才可知），正文图片统一走 `CSPUB_ATOMGIT_TOKEN` 转 AtomGit 外链。跑通凭证：`--draft` 后草稿箱 <https://segmentfault.com/user/draft> 可见该篇，`--live` 后文章管理 <https://segmentfault.com/user/articles> 可见（思否有审核队列，发布成功≠已公开）。
+- **51CTO 未实现**：实测 `POST /blogger/publish` 直接 302 跳登录页，`/blogger/*`、`/api/*` 候选发布路由全 404，首页无 JS bundle——**登录前拿不到发文请求体形状**。按「不写猜测端点」的红线，只在 `docs/多平台发文调研.md` §十留下实测结论与待确认清单，等真实 Cookie 后再做。
 
 ## [v0.2.6] - 2026-11-05
 
