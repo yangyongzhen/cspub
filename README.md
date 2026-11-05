@@ -64,6 +64,20 @@ cjpm build
 
 ## 配置凭证（各平台二选一）
 
+### 用 cookie-export 自助提取（推荐，免 F12 手抄）
+
+![cookie-export 工具界面](docs/imgs/cookie-export-tool.png)
+
+登录态里最关键的那几个字段——知乎 `z_c0`、掘金 `sessionid`、CSDN `UserToken`——多半是 **httpOnly**，`document.cookie` 读不到，F12 手抄还容易漏字段、漏整串。`cj-tauri` 仓库里的 [`examples/cookie-export`](https://atomgit.com/qq8864/cj-tauri/tree/main/examples/cookie-export) 就是为这件事写的桌面小工具：内嵌浏览器登录一次，点三下拿到 cspub 直接能用的凭证。
+
+1. **登录**：点平台卡片的「登录」，在内嵌窗口里正常登录（与浏览器同源，共享 cookie store）；
+2. **提取**：点「提取」，按 cspub 各平台的字段硬需求逐项校验，缺哪个字段直接点出来（例如 `已提取，但缺必需字段：UserToken`）；
+3. **导出**：点「导出」，写 `~/.cspub/config.json`（**合并写**，不覆盖其他平台已有凭证；`chmod 600`）＋ `~/.cspub/cookie_<平台>` 文本文件（沿用 F12 手抄时的习惯）。
+
+- 覆盖平台：CSDN / 知乎 / 掘金 / 开源中国 / 百家号；博客园走 MetaWeblog 令牌（不是 cookie），工具里只做引导。
+- 全部在本机运行，不上报任何 cookie；构建需仓颉 SDK（Linux 走 WebKitGTK、Windows 走 WebView2）。
+- 下表「获取方式」列照旧可用——工具是省事路径，不是唯一路径。
+
 | 平台 | 环境变量 | config.json 字段 | 获取方式 |
 | --- | --- | --- | --- |
 | csdn | `CSPUB_CSDN_COOKIE` | `csdnCookie` | 浏览器登录 → F12 → 复制 Cookie 整串 |
