@@ -16,88 +16,40 @@ import stdx.encoding.json.*
 import std.unittest.*
 
 @Test
-func toutiaoBodyAllFieldsTest(): Unit {
-    let s = buildToutiaoArticleBody("标题五个字", "<p>正文</p>", 0, "")
-    let v = JsonValue.fromStr(s)
+func toutiaoFormAllFieldsTest(): Unit {
+    let s = buildToutiaoArticleForm("标题五个字", "<p>正文</p>", 0, "")
+    // 必须是表单编码：JSON body 会被头条回 7050「保存失败」
+    @Assert(s.startsWith("title="), true)
     let keys: Array<String> = [
         "title", "content", "article_ad_type", "article_type", "from_diagnosis",
         "origin_debut_check_pgc_normal", "tree_plan_article", "save", "pgc_id",
         "pgc_feed_covers"
     ]
-    match (v.kind()) {
-        case JsonKind.JsObject =>
-            let obj = v.asObject()
-            // 头条后台对缺字段的容忍度未知，先保证形状与抓包一致，逐个点名
-            for (k in keys) {
-                @Assert(obj.get(k).isSome(), true)
-            }
-        case _ => @Assert(false, true)
+    // 头条后台对缺字段的容忍度未知，先保证字段集合与实测通过的请求一致，逐个点名
+    for (k in keys) {
+        @Assert(s.contains("&" + k + "=") || s.startsWith(k + "="), true)
     }
 }
 
 @Test
-func toutiaoSaveAndPgcIdTest(): Unit {
-    let live = JsonValue.fromStr(buildToutiaoArticleBody("t", "<p>x</p>", 0, ""))
-    match (live.kind()) {
-        case JsonKind.JsObject =>
-            let obj = live.asObject()
-            // save=0 发布
-            match (obj.get("save")) {
-                case Some(x) =>
-                    match (x.kind()) {
-                        case JsonKind.JsInt => @Assert(x.asInt().getValue(), 0)
-                        case _ => @Assert(false, true)
-                    }
-                case None => @Assert(false, true)
-            }
-            // pgc_id 是字符串 "0"（新建）；写成数字会被判参数错误
-            match (obj.get("pgc_id")) {
-                case Some(x) =>
-                    match (x.kind()) {
-                        case JsonKind.JsString => @Assert(x.asString().getValue(), "0")
-                        case _ => @Assert(false, true)
-                    }
-                case None => @Assert(false, true)
-            }
-            // 不设封面时是字符串 "[]"，不是 JSON 数组
-            match (obj.get("pgc_feed_covers")) {
-                case Some(x) =>
-                    match (x.kind()) {
-                        case JsonKind.JsString => @Assert(x.asString().getValue(), "[]")
-                        case _ => @Assert(false, true)
-                    }
-                case None => @Assert(false, true)
-            }
-        case _ => @Assert(false, true)
-    }
-    // save=1 存草稿
-    let draft = JsonValue.fromStr(buildToutiaoArticleBody("t", "<p>x</p>", 1, ""))
-    match (draft.kind()) {
-        case JsonKind.JsObject =>
-            match (draft.asObject().get("save")) {
-                case Some(x) =>
-                    match (x.kind()) {
-                        case JsonKind.JsInt => @Assert(x.asInt().getValue(), 1)
-                        case _ => @Assert(false, true)
-                    }
-                case None => @Assert(false, true)
-            }
-        case _ => @Assert(false, true)
-    }
+func toutiaoFormSaveAndPgcIdTest(): Unit {
+    let live = buildToutiaoArticleForm("t", "<p>x</p>", 0, "")
+    // save 是表单里的明文键值。实测（2026-11-06）：save=1 提交即发布、save=0 恒 7050，
+    // 所以 publishToToutiao 只传 1；这里保留 0/1 两种构造断言，守住「键名不能丢、不能被转义坏」
+    @Assert(live.contains("&save=0"), true)
+    let draft = buildToutiaoArticleForm("t", "<p>x</p>", 1, "")
+    @Assert(draft.contains("&save=1"), true)
+    // pgc_id 只能是 "0"（新建）
+    @Assert(live.contains("&pgc_id=0"), true)
+    // 不设封面时是字符串 "[]" 的 form 编码形式，不是 JSON 数组
+    @Assert(live.contains("&pgc_feed_covers=%5B%5D"), true)
+    // HTML 内容按 form 编码：尖括号与斜杠必须转义，否则服务端会当标签解析
+    @Assert(live.contains("&content=%3Cp%3Ex%3C%2Fp%3E"), true)
     // 显式封面 JSON 原样落地（不能被 "[]" 覆盖）
-    let withCover = JsonValue.fromStr(buildToutiaoArticleBody("t", "<p>x</p>", 0, "[\"tos-cn-1\"]"))
-    match (withCover.kind()) {
-        case JsonKind.JsObject =>
-            match (withCover.asObject().get("pgc_feed_covers")) {
-                case Some(x) =>
-                    match (x.kind()) {
-                        case JsonKind.JsString => @Assert(x.asString().getValue(), "[\"tos-cn-1\"]")
-                        case _ => @Assert(false, true)
-                    }
-                case None => @Assert(false, true)
-            }
-        case _ => @Assert(false, true)
-    }
+    let withCover = buildToutiaoArticleForm("t", "<p>x</p>", 0, "[\"tos-cn-1\"]")
+    @Assert(withCover.contains("&pgc_feed_covers=%5B%22tos-cn-1%22%5D"), true)
+    // 绝不能是 JSON body —— 这正是 7050 的根因
+    @Assert(live.startsWith("{"), false)
 }
 
 @Test
@@ -169,9 +121,10 @@ func toutiaoCookieTest(): Unit {
     @Assert(toutiaoCookieHasSession("_ga=1; tt_webid_v2=2"), false)
     @Assert(toutiaoCookieHasSession(""), false)
 
-    // X-CSRFToken 优先 csrftoken，退一步 csrf_sessionid
+    // X-CSRFToken 依次取 csrftoken / csrf_session_id / passport_csrf_token
     @Assert(toutiaoCsrfToken("csrftoken=abc123; sessionid=x"), "abc123")
-    @Assert(toutiaoCsrfToken("csrf_sessionid=tok9; sessionid=x"), "tok9")
+    @Assert(toutiaoCsrfToken("csrf_session_id=tok9; sessionid=x"), "tok9")
+    @Assert(toutiaoCsrfToken("passport_csrf_token=pp7; sessionid=x"), "pp7")
     @Assert(toutiaoCsrfToken("sessionid=x"), "")
     @Assert(toutiaoCsrfToken(""), "")
 }
@@ -214,6 +167,4 @@ func toutiaoRewriteImgTest(): Unit {
 func toutiaoUrlTest(): Unit {
     @Assert(toutiaoArticleUrl("7031386221209256455"),
         "https://www.toutiao.com/article/7031386221209256455/")
-    @Assert(toutiaoDraftUrl("703"),
-        "https://mp.toutiao.com/profile_v3/graphic/publish?pgc_id=703")
 }

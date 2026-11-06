@@ -141,16 +141,18 @@ func usage(): Unit {
     println("  juejin:    CSPUB_JUEJIN_COOKIE（须含 sessionid）+ 可选 CSPUB_JUEJIN_UUID/CATEGORY_ID/TAG_IDS")
     println("  oschina:   CSPUB_OSCHINA_COOKIE（须含 oscid）+ 可选 CSPUB_OSCHINA_USER_ID/CATALOG/PRIVACY")
     println("             （privacy=true 发成仅自己可见；分类默认按 front-matter 名匹配，否则取第一个）")
-    println("  tencent:   CSPUB_TENCENT_COOKIE（须含 skey 或 qcommunity_session）+ 可选 CSPUB_TENCENT_CLASSIFY_IDS")
-    println("             （腾讯云社区 addArticle，零签名；专栏 id 默认 149=技术）")
-    println("             该接口没有草稿态：--draft 只做 dry-run（打印将提交的内容，不发请求），--live 才真发")
+    println("  tencent:   CSPUB_TENCENT_COOKIE（须含 uin，且 skey 或 qcommunity_session 之一）")
+    println("             + CSPUB_TENCENT_CLASSIFY_IDS（专栏 id，须是自己已加入的专栏；默认 149=技术常因无成员权限回 300031）")
+    println("             + CSPUB_TENCENT_TAG_IDS（文章标签 id，逗号分隔；--live 发布必填，空则服务端回 -9993）")
+    println("             走社区编辑器自身的 RPC（/developer/services/ajax/column/article，零签名）")
+    println("             --draft 真存草稿（回显 draftId 与编辑地址），--live 在同一链路上创建并发布")
     println("  yuque:     CSPUB_YUQUE_TOKEN（X-Auth-Token）+ CSPUB_YUQUE_NAMESPACE（user/repo 两段式）")
     println("             + 可选 CSPUB_YUQUE_PUBLIC（0 私密 / 1 公开 / 2 企业内公开；不配则继承知识库）")
     println("             官方 OpenAPI v2，Markdown 原样提交；--draft 建成 public=0 的私密文档（等同草稿）")
     println("  toutiao:   CSPUB_TOUTIAO_COOKIE（须含 sessionid 或 tt_webid）+ 可选 CSPUB_TOUTIAO_CSRF")
     println("             模拟后台 mp/agw 接口，X-CSRFToken 默认自动取 cookie 的 csrftoken")
     println("             图片硬约束：正文每张图都要转存头条 CDN，任何非头条域名 → 整篇拒稿 7115")
-    println("             头条无开放 API，属模拟操作；--draft = save=1 存草稿，--live = save=0 发布")
+    println("             **头条没有草稿通道**：save=1 提交即公开发布（进审核队列），因此只能用 --live")
     println("  segmentfault: CSPUB_SEGMENTFAULT_COOKIE（思否登录后的整串 Cookie）")
     println("             走 /gateway 网关，零签名；Token 于发文时从写文章页 __NEXT_DATA__ 实时取")
     println("             正文是 HTML 富文本，--draft 存草稿箱、--live 直接发布")
@@ -201,18 +203,21 @@ func loadOschinaCreds(): (String, String, String, Bool) {
     return (cookie, userId, catalog, privacy)
 }
 
-/** 载入腾讯云凭证：Cookie + 可选专栏 id。Cookie 缺失给可行动报错（不是笼统的「配置缺失」）。 */
-func loadTencentCreds(): (String, String) {
+/** 载入腾讯云凭证：Cookie + 可选专栏 id + 可选文章标签 id。
+ * Cookie 缺失给可行动报错（不是笼统的「配置缺失」）。 */
+func loadTencentCreds(): (String, String, String) {
     let cookie = loadConfigString("CSPUB_TENCENT_COOKIE", "tencentCookie")
     let classify = loadConfigString("CSPUB_TENCENT_CLASSIFY_IDS", "tencentClassifyIds")
+    let tags = loadConfigString("CSPUB_TENCENT_TAG_IDS", "tencentTagIds")
     if (cookie.size == 0) {
         println("错误：没有找到腾讯云开发者社区 Cookie。")
         println("  方式一：export CSPUB_TENCENT_COOKIE='<浏览器登录 cloud.tencent.com 后复制的 Cookie 整串，须含 skey>'")
         println("  方式二：~/.cspub/config.json 写 {\"tencentCookie\": \"...\"}")
         println("  可选：CSPUB_TENCENT_CLASSIFY_IDS=149（专栏 id，逗号分隔，默认 149=技术）")
+        println("  可选：CSPUB_TENCENT_TAG_IDS=10757,17183（文章标签 id，--live 发布时必填）")
         println("  注意：skey 里的 * 原样保留，不要做 URL 编码")
     }
-    return (cookie, classify)
+    return (cookie, classify, tags)
 }
 
 /** 载入语雀凭证：Token + namespace + 可选公开性。两者都是必填，缺哪个就点名哪个。 */
@@ -340,7 +345,7 @@ func cmdWhoami(args: Array<String>): Int64 {
         return 0
     }
     if (platform == "tencent") {
-        let (tCookie, tClassify) = loadTencentCreds()
+        let (tCookie, tClassify, _) = loadTencentCreds()
         if (tCookie.size == 0) {
             return 1
         }
@@ -382,7 +387,7 @@ func cmdWhoami(args: Array<String>): Int64 {
         println("X-CSRFToken : ${if (tCsrf.size > 0) { "已取得（${tCsrf.size} 字节）" } else { "**缺失**：cookie 里没有 csrftoken" }}")
         println("Cookie 长度 : ${tCookie.toArray().size} 字节")
         println("提示：头条无开放发布 API，本工具模拟后台 mp/agw 接口；正文任一非头条域名图片都会整篇拒稿（7115）")
-        println("      --draft = save=1 存草稿；--live = save=0 发布（有审核队列，约每日 4 篇上限）")
+        println("      头条没有草稿通道：save=1 提交即发布（有审核队列，约每日 4 篇上限），故只支持 --live")
         return if (hasSess || hasWeb) { 0 } else { 1 }
     }
     if (platform == "segmentfault") {
@@ -616,17 +621,17 @@ func cmdPublish(args: Array<String>, startIdx: Int64): Int64 {
             atomgitToken, atomgitRepo, atomgitBranch, atomgitDir)
     }
     if (platform == "tencent") {
-        let (tCookie, tClassify) = loadTencentCreds()
+        let (tCookie, tClassify, tTags) = loadTencentCreds()
         if (tCookie.size == 0) {
             return 1
         }
         if (!tencentCookieHasSession(tCookie)) {
             println("警告：Cookie 里没有 skey / qcommunity_session，多半不是登录态整串")
         }
-        let tMode = if (publishNow) { "publish" } else { "dry-run（无草稿态）" }
+        let tMode = if (publishNow) { "publish" } else { "存草稿（可逆）" }
         let (tToken, tRepo, tBranch, tDir) = loadAtomgitImageConf()
         println("发布到腾讯云开发者社区（${tMode}）…")
-        return publishToTencent(tCookie, tClassify, a, publishNow, insecure, tToken, tRepo, tBranch, tDir)
+        return publishToTencent(tCookie, tClassify, tTags, a, publishNow, insecure, tToken, tRepo, tBranch, tDir)
     }
     if (platform == "yuque") {
         let (qToken, qNs, qPublic) = loadYuqueCreds()
@@ -656,7 +661,7 @@ func cmdPublish(args: Array<String>, startIdx: Int64): Int64 {
             println("警告：没能从 cookie 取到 csrftoken，X-CSRFToken 头将缺失（头条风控多半会挡）")
             println("      可显式给：CSPUB_TOUTIAO_CSRF=<后台请求里的 X-CSRFToken>")
         }
-        let tMode = if (publishNow) { "publish（save=0）" } else { "draft（save=1）" }
+        let tMode = if (publishNow) { "提交发布（save=1）" } else { "未提交（头条无草稿通道）" }
         let (tToken, tRepo, tBranch, tDir) = loadAtomgitImageConf()
         println("发布到头条号（${tMode}）…")
         return publishToToutiao(tCookie, tCsrf, a, publishNow, insecure, tToken, tRepo, tBranch, tDir)

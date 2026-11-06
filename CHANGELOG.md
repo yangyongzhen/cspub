@@ -4,29 +4,99 @@ cspub 版本变更记录。版本号规则沿用 cjh：重大更新递增中间�
 
 ## [Unreleased]
 
-新增四个平台通道：腾讯云开发者社区（纯 Cookie）、语雀（官方 OpenAPI v2 + Token）、头条号（模拟后台 mp/agw 接口）、SegmentFault 思否（`/gateway` 网关 + 页面取 Token）。四者都是「实现 + 单测」交付，**端到端发布待凭证**（本机没有这四家的登录态）。
+新增四个平台通道：腾讯云开发者社区（纯 Cookie）、语雀（官方 OpenAPI v2 + Token）、头条号（模拟后台 mp/agw 接口）、SegmentFault 思否（`/gateway` 网关 + 页面取 Token）。其中**腾讯云已端到端跑通草稿与正式发布**（草稿 `draftId 341903`，正式文章 `articleId 2777717`，均服务端核验）；语雀 / 头条号 / SegmentFault 三家是「实现 + 单测」交付，**端到端发布待凭证**。
 
 ### 新增
 
-- **腾讯云开发者社区**（`src/tencent.cj`，`--platform tencent`）：直调 `POST /developer/api/article/addArticle`，纯 Cookie、零签名，比 CSDN 还简单。请求体一次给全十个字段（`title` / `content` / `plain` / `summary` / `userSummary` / `sourceType:1` / `isOriginal` / `classifyIds` / `openComment:1` / `closeTextLink:0`）；正文不足 140 字（按 UTF-8 字符）本地即拦截；`classifyIds` 空配置回落 149（技术）。该接口**没有草稿态**：`--draft` 只做 dry-run，`--live` 才真发。
+- **腾讯云开发者社区**（`src/tencent.cj`，`--platform tencent`）：改走编辑器自身的 RPC
+  `POST /developer/services/ajax/column/article?action=CreateArticleDraft&uin=<uin>`（纯 Cookie、零签名），
+  请求体 `{action, payload}`，payload 12 字段（`articleId` / `title` / `content` / `plain` / `columnIds` /
+  `tagIds` / `keywords` / `sourceType` / `openComment` / `focusReadTotalAfterFollowAuthor` / `closeTextLink` /
+  `classifyIds`）。`uin` 取自 Cookie 的 `uin=o100009199133` 并**去掉前导 `o`**（留 `o` 会被当无效账号）；
+  `csrfCode` 实测**可带可不带**（原以为必需）。正文
+  `content = base64(urlencode(JSON.stringify(jsonpack.pack(rawDraft))))`，`plain` 同法包纯文本——三层，错一层就 400。
+  **旧实现调的 `/developer/api/article/addArticle` 是废弃接口**：该串在前端 bundle 里出现 0 次，参数再全也恒 400，
+  这轮整体换掉。`--draft` **现在真存草稿**（回显 `draftId` 与编辑地址），不再冒充 dry-run；
+  正文不足 140 字仍按 UTF-8 字符本地拦截，但草稿阶段不拦（实测 6 字符也能存），`classifyIds` 空配置回落 149（技术）。
+- **腾讯云图片转存**（`saveTencentHttpImage` / `rehostTencentImages`，namespace `image`）：正文外链图逐张换成
+  腾讯云自家图床直链。**实测推翻了「必须 `regionKey` + `bucketConfigKey`」的假设**——payload 只给 `url` 就
+  `code:0`，回 `data.url`（`https://developer.qcloudimg.com/operation/attachment/<uid>/<date>-<hash>.png`），
+  直连校验 `HTTP 200 / 130318 bytes / PNG 1770x840`；这两个键在 bundle 里只是形参、取不到真实常量，实测省掉不影响，
+  所以「等抓包再实现」这一步直接取消。已是 `qcloudimg.com` / `cloud.tencent.com` 的图不重复转；单张失败保留原链接、
+  不阻断发文（与其它平台一致）。图片 RPC 的 namespace 是 `image`，与发文的 `column/article` 混用会回 501，故单开一条调用通道。
+- **腾讯云正式发布（`CreateArticle`）端到端跑通**（`articleId 2777717`）：`--live` = 建草稿拿到 `draftId` 后再调
+  `CreateArticle` 转正。连通后连撞 5 个**字段语义**坑（不是鉴权也不是编码），全部已修并各留一条断言：
+  `sourceType` 必须 `1`（传 `0` 回 `-9996 文章来源类型错误`，前端枚举 `ORIGINAL:1/REPRODUCED:2/TRANSLATED:3`）；
+  IMAGE entity 的 `data` 必须给 `imageUrl`（只给 Draft.js 惯例的 `src` 会回 `500 …Cannot read property
+  'startsWith' of undefined`）；原创**不能**带 `sourceDetail`（带空串回 `400 参数错误`，去掉即通过）；
+  `tagIds` 不能为空（回 `-9993 请选择文章标签`）；专栏必须是自己已加入的（默认 `149` 会回 `300031 user not the
+  column member`）。新增 `CSPUB_TENCENT_TAG_IDS` 配置（`parseTencentTagIds`），发布前本地校验标签非空并给可行动提示。
+  专栏/标签查询在 `column/column` namespace：`FetchJoinedColumnList` / `FetchColumnTags`（不在 `column/article`，用错回 501）。
+- **jsonpack 打包器移植**（`src/jsonpack.cj`，284 行）：把 Draft.js 的 `RawDraftContentState` 压成
+  `blocks|key|421q5|text|...` 形式。**弃用 `stdx` 的 `JsonObject`**——`getFields()` 返回 `HashMap`、遍历顺序不保证，
+  字典会错位；改为自建有序节点树 `JpNode` + `JpDict`（插入顺序的 `strings`/`integers` 双表 + 下标映射），
+  保证字典与官方 node 版逐字节一致。单测 `src/jsonpack_test.cj` 对照 node 生成的黄金样本，覆盖空容器 /
+  单 block / 多 block / `%|^+ ` 转义。
 - **语雀**（`src/yuque.cj`，`--platform yuque`）：走官方 OpenAPI v2 `POST /api/v2/repos/{namespace}/docs`，`X-Auth-Token` 鉴权，Markdown 原样提交（`format: markdown`，不预渲染 HTML）。`--draft` 建成 `public=0` 私密文档（等同草稿），`--live` 用 `CSPUB_YUQUE_PUBLIC` 配置或不传（继承知识库公开性）。`whoami yuque` 真调 `GET /api/v2/user` 联网校验 Token —— 目前唯一能真验凭证的平台。
 - `util.cj:utf8CharCount`（按 UTF-8 首字节判界计数，不在汉字中间切开），供腾讯云 140 字校验使用。
-- **头条号**（`src/toutiao.cj`，`--platform toutiao`）：无开放 API，模拟后台 `mp/agw` 三条实测端点——发文 `POST /mp/agw/article/publish`、图片 `POST /mp/agw/article_material/photo/upload_picture`（multipart 字段 `upfile`）、媒体信息 `GET /mp/agw/media/get_media_info`；鉴权是 Cookie + `X-CSRFToken`（默认自动取 cookie 的 `csrftoken`）。标题按 UTF-8 字符校验 `5~30` 字；`--draft` 对应 `save=1` 存草稿、`--live` 对应 `save=0` 发布。
-- **头条图片转存管线**（`rehostToutiaoImages` / `uploadToutiaoImage` / `collectImgSrcs` / `rewriteHtmlImgs`）：头条是唯一「外链也必须转存」的平台——正文任一非头条域名图片会让整篇被拒 `7115 图片uri非法`。实现为：正文所有 `<img>` 逐张下载 → multipart 上传头条 CDN → 按 `origin_web_uri` 把标签改写成 `<img src="<头条链接>" web_uri="<头条uri>">`；失败张数 > 0 时在提交前明确告警「本次很可能被 7115 拒稿」，不静默照发。
+- **头条号**（`src/toutiao.cj`，`--platform toutiao`）：无开放 API，模拟后台 `mp/agw` 实测端点——发文
+  `POST /mp/agw/article/publish`、图片 `POST /mp/agw/article_material/photo/upload_picture/?type=json&pgc_watermark=1&action=uploadimage&encode=utf-8`
+  （multipart 字段 `upfile`）、媒体信息 `GET /mp/agw/media/get_media_info`；鉴权是 Cookie + `X-CSRFToken`
+  （默认自动取 cookie 的 `csrf_session_id`，兼容 `csrftoken` / `passport_csrf_token`）。标题按 UTF-8 字符校验 `5~30` 字。
+  **这条接口没有「只存草稿」这一档**：`save=1` 提交后后台状态直接是 `status=3 已发布`、公开页可访问；
+  `save=0` 恒 `7050 保存失败`。所以 `--live` = `save=1` 提交（进审核队列），`--draft` 一律不提交（详见「修复」）。
+- **头条图片转存管线**（`rehostToutiaoImages` / `uploadToutiaoImage` / `collectImgSrcs` / `rewriteHtmlImgs`）：
+  头条是唯一「外链也必须转存」的平台——正文任一非头条域名图片会让整篇被拒 `7115 图片uri非法`。实现为：正文所有
+  `<img>` 逐张下载 → multipart 上传头条 CDN → 按 `origin_web_uri` 改写成 `<img src="<头条链接>" web_uri="<头条uri>">`；
+  失败张数 > 0 时在提交前明确告警「本次很可能被 7115 拒稿」，不静默照发。
+  **端到端实测「图片（头条 CDN）：成功 2，失败 0」**，转存后直链 `curl` 回 `HTTP 200 / PNG 100x100`，
+  正文 `<img>` 已带 `web_uri`——这条链路不再有未验证项。
 - **SegmentFault 思否**（`src/segmentfault.cj`，`--platform segmentfault`）：走前端自用的 `/gateway` 网关，零签名。发文 `POST /gateway/article`、存草稿 `POST /gateway/draft`（**两个不同端点**，所以 `--draft` 真能落草稿箱）。鉴权是三件套：Cookie + `Token` 头 + `Authorization: Bearer <同值>`，其中 Token **不在 Cookie 里**，发文时从写文章页 `__NEXT_DATA__` 的 `serverData.Token` 实时取（`extractSegmentfaultToken`，未登录时空串即判「Cookie 不是登录态」）。请求必带 `Origin`/`Referer`，否则先被 CSRF 网关挡成 403。正文渲染成 HTML 富文本（`text` 字段），`tags` 传数组；图片需公网 URL，配 `CSPUB_ATOMGIT_TOKEN` 自动转 AtomGit 外链，未配只警告不阻断。错误分诊写死：401=未登录/Token 失效、403=CSRF、404=路径变了（明确提示「不是 Cookie 问题」）。`whoami segmentfault` 会联网 GET `/write` 抠 Token 做真实登录态校验。
 
 ### 修复
 
 - `parseYuquePublic` 不再借用「非数字返回 0」的兜底：`0` 在语雀语义里是合法的「私密」，脏配置（如 `abc`）必须走 `-1`（不传该字段），否则会被静默发成私密。首轮单测 `yuquePublicParseTest` 正是因此红。
+- **头条号 `7050 保存失败` 的根因是 body 编码，不是缺字段**：同一 URL、同一 Cookie、同一份正文，
+  `Content-Type: application/json` → `{"code":7050,"message":"保存失败"}`；换成 `application/x-www-form-urlencoded`
+  → `{"code":0,"message":"提交成功"}` + `pgc_id`。`buildToutiaoArticleBody`（JSON）整体换成
+  `buildToutiaoArticleForm`（复用 `tencent.cj` 的 `urlEncodeComponent` 逐键值转义），请求头同步改表单类型。
+  `Referer` 用 v3 还是 v4、带不带 `X-CSRFToken`、加 `source`/`abstract` 等字段、URL 带不带尾斜杠——四组对照
+  **全部仍是 7050**，这条排查线已彻底排除，过程记入 `docs/开发文档与踩坑记录.md` §22。
+- **头条 `X-CSRFToken` 兜底键名少一个下划线**：本机这串 Cookie 只有 `csrf_session_id`，旧代码取 `csrf_sessionid`
+  永远得到空串（等于把空 CSRF 头发出去）。现按 `csrftoken` → `csrf_session_id` → `passport_csrf_token` 依次取。
+- **头条 `--draft` 其实在静默公开发文**：这个坑代价最大。`save=1` 一直被当成「存草稿」，但实测提交后
+  后台列表状态是 `status=3 已发布`、`https://www.toutiao.com/item/{pgc_id}/` 回 `HTTP 200`；反过来
+  `save=0`（原 `--live`）恒回 `7050 保存失败`——补 `abstract`/`pgc_feed_covers`、改成「先建草稿再按
+  pgc_id 提交」的两阶段，分别得到 `7050` 与 `3014 审核中，无法修改`；`save_ugc_draft`（form 与 JSON 都试）
+  恒回 `1066 草稿内容为空`。**结论：没有可用的真草稿通道**。现在 `--live` = `save=1` 提交，
+  `--draft` **一律不提交**并打印原因，把「要不要公开」交回用户——宁可少一个功能，不可再静默发出去。
+- **头条图片上传的两处硬参数**：`upload_picture` 必须以 `?type=json&...&encode=utf-8` 且**带尾斜杠**的形态请求，
+  旧的 `?type=ueditor&...`（无尾斜杠）恒回 `1050 图片上传失败`；请求还必须带 `x-requested-with: XMLHttpRequest`，
+  缺了同一张图同样回 `1050`。补齐后同一张图回 `code 0` + `web_uri`。
+- **头条上传的成功判据不能只看 `state`**：这份响应是**扁平结构**（无 `data` 包裹），且实测成功时 `state` 可能为空串；
+  现改为 `code == 0` 且拿到 `web_uri` 即算成功，`pubUrl` 依次兜底 `url` → `origin_web_url` → `web_url`。
 
 ### 测试
 
-- `cjpm test` **67 个用例全绿**（新增 33 个：腾讯云 7 / 语雀 7 / 头条号 9 / SegmentFault 10），`cjpm clean && cjpm build` **零警告**。
+- `cjpm test` **81 个用例全绿 / FAILED: 0**（本轮腾讯云 15 + jsonpack 4），`cjpm build` **零警告**。
+- 头条断言从「JSON 结构」改为「form 字段」：守住 `save=0` / `save=1`、`pgc_id=0`、
+  `pgc_feed_covers=%5B%5D`、`content=%3Cp%3Ex%3C%2Fp%3E`（尖括号与斜杠必须转义），并加一条
+  `startsWith("{") == false` 把「退回 JSON body」这个已证伪的形态钉死在测试里。
+- 腾讯云最强的一条用例拿**线上真包的 base64 原文**当期望值（`tencentContentEncMatchesCaptureTest`）：
+  pack → JSON.stringify → urlencode → base64 整条链路只要偏一个字节就红，比「能存进去就算过」硬。
 
 ### 未验证（明确标注，不作通过处理）
 
-- 腾讯云与语雀的**端到端发布没有跑**：本机没有这两家的登录 Cookie / Token。当前交付边界是「请求体构造 + 响应解析 + 错误映射全部有单测覆盖」，**不等于线上真能发出去**。拿到凭证后须各真发一篇（先草稿）并回显 id / 文档直链才算跑通。
-- 头条号的**端到端发布与图片上传没有跑**：本机没有头条登录态。已单测覆盖的是「请求体构造 / 响应解析 / 登录码与 7115 的区分 / 标题字符区间 / img 标签改写」；**未经真机验证的三项**须拿到 Cookie 后逐项确认：①上传响应里 `state == "SUCCESS"` 的判定与 `origin_web_uri` 字段名，②改写后的 `<img src web_uri>` 形态能否被编辑器正常保存，③`save=1` 是否真的落成草稿。跑通凭证：`--draft` 回显 `pgc_id` + 后台草稿直链，`--live` 回显 `https://www.toutiao.com/article/<pgc_id>/` 且正文图片正常显示。
+- 腾讯云**已无未验证项**：草稿（`draftId 341903` / `341905`）、图片转存（回显 `图片（腾讯云图床）：成功 2，失败 0`）、
+  正式发布（`articleId 2777717`）三条链路均端到端跑通，证据见上文「新增」与 `docs/多平台发文调研.md` §11.3 的 ⑦。
+- 语雀的**端到端发布没有跑**：本机没有语雀 Token。当前交付边界是「请求体构造 + 响应解析 + 错误映射全部有单测覆盖」，**不等于线上真能发出去**。拿到凭证后须真发一篇（先草稿）并回显文档直链才算跑通。
+- 头条号**已无未验证项，且实测发现「草稿档」根本不存在**：`save=1` 提交后后台列表状态为 `status=3 已发布`，
+  公开页 `https://www.toutiao.com/item/7704929083666334258/`、`.../7704932867448603187/` 均回 `HTTP 200`
+  （后者先 `status=6 审核中`，数分钟后自动转 `已发布`）；图片管线回显「成功 2，失败 0」，转存直链 `curl`
+  回 `HTTP 200 / PNG 100x100`，正文 `<img>` 已带 `web_uri`。`save=0` 恒 `7050`、`save_ugc_draft` 恒 `1066`，
+  所以「只存草稿」在当前接口面下不可用，`--draft` 已改为拒绝提交（详见「修复」）。
+- 头条**同名标题是否判重**未单独验证：本轮 3 篇同名「仓颉多平台发文工具」均提交成功，未触发查重拦截；
+  但这不足以证明头条没有查重策略。
 - SegmentFault 的**端到端发布没有跑**：本机没有思否登录态。已单测覆盖「token 抠取（含未登录空串与锚点缺失）/ 请求体字段与 tags 数组 / cover 空值不带 / HTML 转义 / 响应解析（字符串错误体、对象、坏 JSON）」。**未经真机验证的三项**：①成功响应体的具体形状——正因未知，成功判据已放宽为「HTTP 200 即视为已提交，抠到 id 才打印」，不会把已发出的文章报成失败；②`tags` 传**标签名数组**（编辑器传入形态），若后端要求标签 id 会回参数错误；③本模块**没有**调用 `/gateway/image` 上传本地图片（multipart 字段名登录后才可知），正文图片统一走 `CSPUB_ATOMGIT_TOKEN` 转 AtomGit 外链。跑通凭证：`--draft` 后草稿箱 <https://segmentfault.com/user/draft> 可见该篇，`--live` 后文章管理 <https://segmentfault.com/user/articles> 可见（思否有审核队列，发布成功≠已公开）。
 - **51CTO 未实现**：实测 `POST /blogger/publish` 直接 302 跳登录页，`/blogger/*`、`/api/*` 候选发布路由全 404，首页无 JS bundle——**登录前拿不到发文请求体形状**。按「不写猜测端点」的红线，只在 `docs/多平台发文调研.md` §十留下实测结论与待确认清单，等真实 Cookie 后再做。
 

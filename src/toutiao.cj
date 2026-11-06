@@ -28,7 +28,7 @@ import stdx.encoding.json.*
 import stdx.net.http.*
 
 public const TOUTIAO_PUBLISH_API: String = "https://mp.toutiao.com/mp/agw/article/publish?source=mp&type=article&aid=13&device_platform=web"
-public const TOUTIAO_UPLOAD_API: String = "https://mp.toutiao.com/mp/agw/article_material/photo/upload_picture?type=ueditor&pgc_watermark=1&action=uploadimage&encode=utf-8"
+public const TOUTIAO_UPLOAD_API: String = "https://mp.toutiao.com/mp/agw/article_material/photo/upload_picture/?type=json&pgc_watermark=1&action=uploadimage&encode=utf-8"
 public const TOUTIAO_MEDIA_API: String = "https://mp.toutiao.com/mp/agw/media/get_media_info"
 public const TOUTIAO_SITE: String = "https://mp.toutiao.com"
 /** 标题字符数区间：头条后台写死 5~30 字（外部资料 + 编辑器行为，本机无凭证未真验） */
@@ -41,14 +41,17 @@ public func toutiaoCookieHasSession(cookie: String): Bool {
     return cookieValue(cookie, "sessionid").size > 0 || cookieValue(cookie, "tt_webid").size > 0
 }
 
-/** X-CSRFToken 头的值：取 cookie 里的 csrftoken；缺失时返回空串（调用方据此警告，不硬编造） */
+/** X-CSRFToken 头的值：优先 cookie 的 csrftoken，其次 csrf_session_id，再次 passport_csrf_token。
+ * 头条后台实际用的是 **csrf_session_id**（带下划线）；早期兜底写成 `csrf_sessionid`（少一个下划线），
+ * 在本机这串 Cookie 上永远取到空串，等于把空 X-CSRFToken 发出去。 */
 public func toutiaoCsrfToken(cookie: String): String {
-    let t = cookieValue(cookie, "csrftoken")
-    if (t.size > 0) {
-        return t
+    for (k in ["csrftoken", "csrf_session_id", "passport_csrf_token"]) {
+        let t = cookieValue(cookie, k)
+        if (t.size > 0) {
+            return t
+        }
     }
-    // 头条部分账号只在 csrf_sessionid 里带 token，退一步取它
-    return cookieValue(cookie, "csrf_sessionid")
+    return ""
 }
 
 /** 标题字符数（按 UTF-8 字符，不按字节：切在汉字中间会算成 3 个字） */
@@ -62,22 +65,37 @@ public func toutiaoTitleOk(title: String): Bool {
     return n >= TOUTIAO_TITLE_MIN && n <= TOUTIAO_TITLE_MAX
 }
 
-/** publish 请求体（纯函数，单测覆盖）。
- * save: 0=发布、1=草稿；pgc_id 传 "0" 表示新建；封面走 pgc_feed_covers（空数组=不设封面，头条自动取正文首图）。 */
-public func buildToutiaoArticleBody(title: String, html: String, save: Int64, coverJson: String): String {
-    let o = JsonObject()
-    o.put("title", JsonString(title))
-    o.put("content", JsonString(html))
-    o.put("article_ad_type", JsonInt(2))
-    o.put("article_type", JsonInt(0))
-    o.put("from_diagnosis", JsonInt(0))
-    o.put("origin_debut_check_pgc_normal", JsonInt(0))
-    o.put("tree_plan_article", JsonInt(0))
-    o.put("save", JsonInt(save))
-    o.put("pgc_id", JsonString("0"))
+/** publish 请求体（**form-urlencoded**，单测覆盖）。
+ *
+ * 头条 /mp/agw/article/publish 只吃表单编码：同样的字段换成 JSON body 一律回
+ * 7050「保存失败」（2026-11-06 实测：JSON → 7050；同一 URL 换成
+ * application/x-www-form-urlencoded → code 0 + pgc_id）。
+ * save: 0=发布、1=草稿；pgc_id 传 "0" 表示新建；封面走 pgc_feed_covers（"[]"=不设封面）。 */
+public func buildToutiaoArticleForm(title: String, html: String, save: Int64, coverJson: String): String {
     let covers = if (coverJson.size > 0) { coverJson } else { "[]" }
-    o.put("pgc_feed_covers", JsonString(covers))
-    return o.toJsonString()
+    let fields = ArrayList<StrKV>()
+    fields.add(StrKV("title", title))
+    fields.add(StrKV("content", html))
+    fields.add(StrKV("article_ad_type", "2"))
+    fields.add(StrKV("article_type", "0"))
+    fields.add(StrKV("from_diagnosis", "0"))
+    fields.add(StrKV("origin_debut_check_pgc_normal", "0"))
+    fields.add(StrKV("tree_plan_article", "0"))
+    fields.add(StrKV("save", save.toString()))
+    fields.add(StrKV("pgc_id", "0"))
+    fields.add(StrKV("pgc_feed_covers", covers))
+    let sb = StringBuilder()
+    var first = true
+    for (f in fields) {
+        if (!first) {
+            sb.append("&")
+        }
+        first = false
+        sb.append(urlEncodeComponent(f.k))
+        sb.append("=")
+        sb.append(urlEncodeComponent(f.v))
+    }
+    return sb.toString()
 }
 
 /** 解析 mp/agw 响应：返回 (code, message, pgc_id)。
@@ -134,11 +152,6 @@ func toutiaoNum(s: String): Int64 {
 /** 文章地址：头条正式文是 https://www.toutiao.com/article/{pgc_id}/，草稿只在后台可见 */
 public func toutiaoArticleUrl(pgcId: String): String {
     return "https://www.toutiao.com/article/${pgcId}/"
-}
-
-/** 后台草稿编辑地址（save=1 时给出，供人工补封面/改分类） */
-public func toutiaoDraftUrl(pgcId: String): String {
-    return "${TOUTIAO_SITE}/profile_v3/graphic/publish?pgc_id=${pgcId}"
 }
 
 // ── 头条图片转存（头条唯一认可的是自家 CDN 的 web_uri，外链一律 7115） ──
@@ -250,6 +263,8 @@ public func uploadToutiaoImage(cookie: String, csrf: String, data: Array<Byte>, 
     hs.add(StrKV("Referer", TOUTIAO_SITE + "/profile_v3/graphic/publish"))
     hs.add(StrKV("Origin", TOUTIAO_SITE))
     hs.add(StrKV("Cookie", cookie))
+    // 头条把「缺这个头的上传」当非 ajax 请求：同一张图实测不带回 1050「图片上传失败」、带上回 code 0
+    hs.add(StrKV("x-requested-with", "XMLHttpRequest"))
     if (csrf.size > 0) {
         hs.add(StrKV("X-CSRFToken", csrf))
     }
@@ -282,9 +297,18 @@ public func uploadToutiaoImage(cookie: String, csrf: String, data: Array<Byte>, 
             if (pubUrl.size == 0) {
                 pubUrl = jsonScalar(root, "origin_web_url")
             }
+            if (pubUrl.size == 0) {
+                pubUrl = jsonScalar(root, "web_url")
+            }
         case _ => ()
     }
-    if (state != "SUCCESS" || uri.size == 0) {
+    // 成功判据不能只看 state：这份响应是**扁平结构**（无 data 包裹），新版接口成功时
+    // `state` 常为空串（"SUCCESS" 是旧版 ueditor 协议的形状），拿它判会把成功当失败。
+    let codeOk = jsonScalar(root, "code") == "0"
+    if (!codeOk && state != "SUCCESS") {
+        return ("", "")
+    }
+    if (uri.size == 0) {
         return ("", "")
     }
     if (pubUrl.size == 0) {
@@ -343,11 +367,28 @@ public func rehostToutiaoImages(cookie: String, csrf: String, html: String,
     return (rewriteHtmlImgs(html, map), ok, fail)
 }
 
-/** 头条号发文入口。publishNow=true → save=0 发布；false → save=1 存草稿（草稿也校验图片）。
+/** 头条号发文入口。
+ *
+ * **语义警告（2026-11-06 实测）**：头条这个 publish 接口的 `save=1` 不是「存草稿」，
+ * 提交后列表状态是 `status=3 已发布`，公开页 `https://www.toutiao.com/item/{pgc_id}/` 回 200；
+ * `save=0` 反而恒回 7050「保存失败」（补 abstract/封面、换成两阶段「先建草稿再按 pgc_id 提交」
+ * 全是 7050 或 3014）；真草稿接口 `save_ugc_draft` 恒回 1066「草稿内容为空」。
+ * 所以在这里**只有一条通道**：`--live` 用 save=1 提交（进审核队列）；`--draft` 一律不提交——
+ * 否则就是「以为存草稿、实际已公开发文」的静默骗人。
  * 图片与别的平台相反：**外链也要转存**，否则整篇被拒 7115。 */
 public func publishToToutiao(cookie: String, csrf: String, a: Article, publishNow: Bool,
     insecure: Bool, atomgitToken: String, atomgitRepo: String, atomgitBranch: String,
     atomgitDir: String): Int64 {
+
+    // ⓪ 没有草稿通道：默认档必须**什么都不发**，把选择权交回用户
+    if (!publishNow) {
+        println("头条号：本次未提交（源码里也没有「只存草稿」这条路可走）")
+        println("原因：该 publish 接口的 save=1 实测是「提交并发布」——后台列表直接变成 status=3 已发布，")
+        println("      公开页 https://www.toutiao.com/item/{pgc_id}/ 可访问；save=0 恒 7050「保存失败」；")
+        println("      save_ugc_draft 恒 1066「草稿内容为空」。为了不出现「以为存草稿、其实已公开」，默认档不提交。")
+        println("要真发一篇：加 --live（会进审核队列、公开可见、不可撤回）")
+        return 1
+    }
 
     // ① 标题先拦：5~30 字是头条后台的硬区间，超了在编辑器里就存不进去
     let chars = toutiaoTitleChars(a.title)
@@ -377,12 +418,13 @@ public func publishToToutiao(cookie: String, csrf: String, a: Article, publishNo
     }
     let _ = ok2
 
-    let saveFlag: Int64 = if (publishNow) { 0 } else { 1 }
-    let payload = buildToutiaoArticleBody(a.title, html2, saveFlag, "")
+    // 唯一可用通道：save=1（save=0 恒 7050，见函数头注释）
+    let saveFlag: Int64 = 1
+    let payload = buildToutiaoArticleForm(a.title, html2, saveFlag, "")
     let builder = HttpRequestBuilder()
         .url(TOUTIAO_PUBLISH_API)
         .post()
-        .header("Content-Type", "application/json")
+        .header("Content-Type", "application/x-www-form-urlencoded")
         .body(payload)
     let hs = ArrayList<StrKV>()
     hs.add(StrKV("User-Agent", TOUTIAO_UA))
@@ -413,14 +455,9 @@ public func publishToToutiao(cookie: String, csrf: String, a: Article, publishNo
         return 1
     }
 
-    if (publishNow) {
-        println("头条号：发布成功，pgc_id ${pgcId}")
-        println("文章地址：${toutiaoArticleUrl(pgcId)}")
-        println("提示：头条有审核队列，发布成功不等于已公开；每日发文约 4 篇上限")
-    } else {
-        println("头条号：草稿已保存，pgc_id ${pgcId}")
-        println("草稿地址：${toutiaoDraftUrl(pgcId)}（封面/分类/首发声明在后台补）")
-    }
+    println("头条号：已提交，pgc_id ${pgcId}")
+    println("文章地址：${toutiaoArticleUrl(pgcId)}")
+    println("提示：头条有审核队列（列表状态「审核中」→「已发布」）；每日发文约 4 篇上限")
     return 0
 }
 
