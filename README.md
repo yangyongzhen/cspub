@@ -15,7 +15,7 @@
 [![Platform](https://img.shields.io/badge/%E5%B9%B3%E5%8F%B0-Linux%20%E5%AE%9E%E6%B5%8B-blue)](#已知限制)
 [![官网](https://img.shields.io/badge/%E5%AE%98%E7%BD%91-yangyongzhen.github.io%2Fcspub-ffb224)](https://yangyongzhen.github.io/cspub/)
 [![GitHub](https://img.shields.io/badge/GitHub-yangyongzhen%2Fcspub-181717?logo=github)](https://github.com/yangyongzhen/cspub)
-[![AtomGit](https://atomgit.com/qq8864/cspub/star/new_badge.svg)](https://atomgit.com/qq8864/cspub)
+[![AtomGit](https://atomgit.com/qq8864/cspub/star/badge.svg)](https://atomgit.com/qq8864/cspub)
 
 </div>
 
@@ -26,7 +26,7 @@ cspub publish 我的文章.md --platform baijiahao  # 百家号（Cookie 浏览�
 cspub publish 我的文章.md --platform cnblogs    # 博客园（官方 MetaWeblog API，纯 HTTP）
 cspub publish 我的文章.md --platform juejin     # 掘金（Cookie 两步流；图片外链优先，AtomGit 图床）
 cspub publish 我的文章.md --platform oschina    # 开源中国（Cookie 直通站点接口；图片走它自带图床）
-cspub publish 我的文章.md --platform tencent    # 腾讯云开发者社区（Cookie 零签名；--draft 为 dry-run，无草稿态）
+cspub publish 我的文章.md --platform tencent    # 腾讯云开发者社区（Cookie 零签名；--draft 真存草稿，回显 draftId）
 cspub publish 我的文章.md --platform yuque      # 语雀（官方 OpenAPI v2 + Token；--draft 建成私密文档）
 cspub publish 我的文章.md --platform toutiao    # 头条号（Cookie + X-CSRFToken；图片必须全转存头条 CDN）
 cspub publish 我的文章.md --platform segmentfault  # SegmentFault 思否（Cookie + 页面取 Token；--draft 存草稿箱）
@@ -38,7 +38,7 @@ cspub publish 我的文章.md --live                # 直接发布
 1. 读 Markdown + front-matter（title / tags / categories / desc / draft / origin_url）；
 2. **按平台自动转存图片**：CSDN 外链图转 CSDN 图床（防盗链），知乎图转知乎 CDN（知乎剥离站外图）；
 3. 把 Markdown 渲染成 HTML（各平台编辑器都要求发渲染后的 HTML，不是 Markdown 源文）；
-4. 按平台鉴权发文：CSDN 走网关 HMAC-SHA256 签名（`x-ca-*`）+ Cookie；知乎走 Cookie 草稿接口三步流；百家号走 Cookie 浏览器自动化（Playwright 伴生脚本）或官方开发者凭证；腾讯云开发者社区直调 `addArticle`（纯 Cookie、零签名）；语雀走官方 OpenAPI v2（`X-Auth-Token`，Markdown 原样提交）；头条号模拟后台 `mp/agw` 接口（Cookie + `X-CSRFToken`）；SegmentFault 走 `/gateway` 网关（Cookie + 从写文章页实时取的 `Token`，双头同值）；
+4. 按平台鉴权发文：CSDN 走网关 HMAC-SHA256 签名（`x-ca-*`）+ Cookie；知乎走 Cookie 草稿接口三步流；百家号走 Cookie 浏览器自动化（Playwright 伴生脚本）或官方开发者凭证；腾讯云开发者社区走编辑器自身的 RPC `column/article`（纯 Cookie、零签名）；语雀走官方 OpenAPI v2（`X-Auth-Token`，Markdown 原样提交）；头条号模拟后台 `mp/agw` 接口（Cookie + `X-CSRFToken`）；SegmentFault 走 `/gateway` 网关（Cookie + 从写文章页实时取的 `Token`，双头同值）；
 5. 回显文章链接与 id（CSDN 支持更新用 `--update <id>`）。
 
 主链路全部用仓颉标准库 + stdx 实现（HMAC / Base64 / HTTP / JSON），零第三方依赖；仅百家号 Cookie 通道需要一个 Playwright 伴生脚本。
@@ -96,7 +96,7 @@ cjpm build
 | cnblogs | `CSPUB_CNBLOGS_BLOG_ID` / `CSPUB_CNBLOGS_USERNAME` / `CSPUB_CNBLOGS_TOKEN` | `cnblogsBlogId` / `cnblogsUsername` / `cnblogsToken` | 后台设置 → 开启「允许博客客户端访问」→ 复制 MetaWeblog 访问地址尾巴（博客名）、登录名与访问令牌（**非登录密码**） |
 | juejin | `CSPUB_JUEJIN_COOKIE`（+ 可选 `CSPUB_JUEJIN_UUID/CATEGORY_ID/TAG_IDS`） | `juejinCookie` 等 | 登录 juejin.cn → F12 → 复制 Cookie 整串（须含 `sessionid`）；分类/标签用后台抓包的内部 ID（可选）。正文图片**外链优先**：配了 `CSPUB_ATOMGIT_TOKEN` 就走 AtomGit 图床，否则降级浏览器通道（需 `pip install playwright && playwright install chromium`） |
 | oschina | `CSPUB_OSCHINA_COOKIE`（+ 可选 `CSPUB_OSCHINA_USER_ID/CATALOG/PRIVACY`） | `oschinaCookie` 等 | 登录 oschina.net → F12 → 复制 Cookie 整串（须含 `oscid`）。**图片直接用它自带图床**（`oscimg.oschina.net`），无需额外配置；分类默认按 front-matter `categories` 名匹配，匹配不到取账号第一个分类 |
-| tencent | `CSPUB_TENCENT_COOKIE`（+ 可选 `CSPUB_TENCENT_CLASSIFY_IDS`） | `tencentCookie` / `tencentClassifyIds` | 登录 cloud.tencent.com → F12 → 复制 Cookie 整串（须含 `skey` 或 `qcommunity_session`；`skey` 里的 `*` 原样保留，**不要 URL 编码**）。专栏 id 默认 149=技术，新账号要先在社区后台建专栏（审核 1~3 天）。正文纯文本不少于 140 字 |
+| tencent | `CSPUB_TENCENT_COOKIE`（+ `CSPUB_TENCENT_TAG_IDS`，可选 `CSPUB_TENCENT_CLASSIFY_IDS`） | `tencentCookie` / `tencentTagIds` / `tencentClassifyIds` | 登录 cloud.tencent.com → F12 → 复制 Cookie 整串（须含 `skey` 或 `qcommunity_session`；`skey` 里的 `*` 原样保留，**不要 URL 编码**）。**`tencentTagIds` 必填**（逗号分隔的数字 id，空则接口回 `-9993 请选择文章标签`，工具会本地先拦下）；专栏必须是自己**已加入**的（拿后台专栏 id 填 `tencentClassifyIds`，填别人/默认 149 会回 `300031 user not the column member`）。正文纯文本不少于 140 字 |
 | yuque | `CSPUB_YUQUE_TOKEN` + `CSPUB_YUQUE_NAMESPACE`（+ 可选 `CSPUB_YUQUE_PUBLIC`） | `yuqueToken` / `yuqueNamespace` / `yuquePublic` | 官方 OpenAPI v2：去 <https://www.yuque.com/settings/tokens> 生成 Token，namespace 取知识库 URL 的两段（`user/repo`，**单段一定 404**）。`public` 不配则继承知识库公开性；`--draft` 建成 `public=0` 私密文档 |
 | toutiao | `CSPUB_TOUTIAO_COOKIE`（+ 可选 `CSPUB_TOUTIAO_CSRF`） | `toutiaoCookie` / `toutiaoCsrf` | 登录 mp.toutiao.com → F12 → 复制 Cookie 整串（须含 `sessionid` 或 `tt_webid`）。`X-CSRFToken` 默认自动取 cookie 里的 `csrftoken`，取不到才需要显式给 `CSPUB_TOUTIAO_CSRF`。**标题 5~30 字**；**正文每张图都必须转存头条 CDN**——任何非头条域名图片会让整篇被拒（`7115 图片uri非法`），所以头条是唯一「外链也强制转存」的平台 |
 | segmentfault | `CSPUB_SEGMENTFAULT_COOKIE` | `segmentfaultCookie` | 登录 segmentfault.com → F12 → 复制 Cookie **整串**（思否没有可自查的登录 cookie 字段，登录态由发文时取到的 Token 判定）。走 `/gateway` 网关，`Token` 与 `Authorization: Bearer` 双头同值，Token 从写文章页 `__NEXT_DATA__` 实时取，无需手工填。`--draft` 存草稿箱、`--live` 直接发布。正文图片需公网 URL（配 `CSPUB_ATOMGIT_TOKEN` 自动转外链） |
@@ -136,18 +136,20 @@ echo "export CSPUB_ZHIHU_COOKIE='<Cookie 整串>'" >> ~/.bashrc
 
 > 百家号双通道：纯 Cookie 直调其发布接口不可行（React 发布按钮需完整事件链，直调 API 缺 CSRF 必 500），所以 **Cookie 通道走浏览器自动化**——`--platform baijiahao` 自动调起 `scripts/baijiahao_publish.py`（Playwright 填表单 + 点发布），宿主机需 `pip install playwright && playwright install chromium`；配置了开发者凭证则优先走官方 token 接口。
 
-`cspub whoami [csdn|zhihu|baijiahao]` 校验凭证是否就位（只验格式不联网）。
+`cspub whoami [平台名]` 校验凭证是否就位（只验格式不联网；`yuque` 与 `segmentfault` 例外，会真发一次请求验证登录态）。
 
 ## 用法
 
 ```
 cspub check   <文章.md>            解析 front-matter + 渲染统计（不联网）
 cspub html    <文章.md>            打印渲染后的 HTML（调试用）
+cspub imgs    <文章.md>            预演图片去向（rehost / skip / BLOCKED，不联网）
 cspub publish <文章.md> [--draft]  发草稿（默认）
                    [--live]        直接发布（覆盖 front-matter 的 draft: true）
-                   [--update <id>] 原地更新指定文章
+                   [--platform p]  目标平台，缺省 csdn（见顶部平台清单）
+                   [--update <id>] 原地更新指定文章（仅 CSDN）
                    [--insecure]    跳过 TLS 证书校验（TrustAll，仅诊断/自担风险）
-cspub whoami                       校验 Cookie 配置
+cspub whoami  [平台名]             校验平台凭证配置
 cspub help
 ```
 
@@ -155,6 +157,11 @@ cspub help
 排查上传异常时用；正常使用无需设置。
 
 ## 图片转存（publish 自动做）
+
+各平台策略不同，`publish` 会按 `--platform` 自动选择：**CSDN / 知乎 / 头条号 / 腾讯云**必须转到平台自己的图床
+（前三家会剥站外图或直接拒稿），**掘金 / SegmentFault** 接受外链（配了 `CSPUB_ATOMGIT_TOKEN` 就转 AtomGit 图床），
+**开源中国**用它自带图床。共性底线不变：拦内网/回环地址、拒绝 30x 重定向、单张限 12 MiB、单张失败保留原链接
+不阻断发文。下面是 CSDN 这条最复杂的链路：
 
 CSDN 对站外图有防盗链（典型形状：`<img>` 直连返回 **HTTP 200 + 0 字节**）。`publish` 在发文前**自动**把
 站外图转存到 CSDN 图床（csdnimg.cn）并回写 URL：

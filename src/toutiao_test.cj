@@ -34,8 +34,9 @@ func toutiaoFormAllFieldsTest(): Unit {
 @Test
 func toutiaoFormSaveAndPgcIdTest(): Unit {
     let live = buildToutiaoArticleForm("t", "<p>x</p>", 0, "")
-    // save 是表单里的明文键值。实测（2026-11-06）：save=1 提交即发布、save=0 恒 7050，
-    // 所以 publishToToutiao 只传 1；这里保留 0/1 两种构造断言，守住「键名不能丢、不能被转义坏」
+    // save 是表单里的明文键值。实测（2026-11-06）：非 0 即「提交并发布」（1/3/4 等价），
+    // save=0 是编辑器档、需浏览器风控签名（重放即失效 → 7050），所以 publishToToutiao 只传 1；
+    // 这里保留两种构造断言，守住「键名不能丢、不能被转义坏」
     @Assert(live.contains("&save=0"), true)
     let draft = buildToutiaoArticleForm("t", "<p>x</p>", 1, "")
     @Assert(draft.contains("&save=1"), true)

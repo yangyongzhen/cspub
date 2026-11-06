@@ -4,7 +4,7 @@ cspub 版本变更记录。版本号规则沿用 cjh：重大更新递增中间�
 
 ## [Unreleased]
 
-新增四个平台通道：腾讯云开发者社区（纯 Cookie）、语雀（官方 OpenAPI v2 + Token）、头条号（模拟后台 mp/agw 接口）、SegmentFault 思否（`/gateway` 网关 + 页面取 Token）。其中**腾讯云已端到端跑通草稿与正式发布**（草稿 `draftId 341903`，正式文章 `articleId 2777717`，均服务端核验）；语雀 / 头条号 / SegmentFault 三家是「实现 + 单测」交付，**端到端发布待凭证**。
+新增四个平台通道：腾讯云开发者社区（纯 Cookie）、语雀（官方 OpenAPI v2 + Token）、头条号（模拟后台 mp/agw 接口）、SegmentFault 思否（`/gateway` 网关 + 页面取 Token）。其中**腾讯云已端到端跑通草稿与正式发布**（草稿 `draftId 341903`，正式文章 `articleId 2777717`，均服务端核验）；语雀 / SegmentFault 两家是「实现 + 单测」交付，**端到端发布待凭证**；头条号已端到端跑通（见「未验证」节）。
 
 ### 新增
 
@@ -43,8 +43,10 @@ cspub 版本变更记录。版本号规则沿用 cjh：重大更新递增中间�
   `POST /mp/agw/article/publish`、图片 `POST /mp/agw/article_material/photo/upload_picture/?type=json&pgc_watermark=1&action=uploadimage&encode=utf-8`
   （multipart 字段 `upfile`）、媒体信息 `GET /mp/agw/media/get_media_info`；鉴权是 Cookie + `X-CSRFToken`
   （默认自动取 cookie 的 `csrf_session_id`，兼容 `csrftoken` / `passport_csrf_token`）。标题按 UTF-8 字符校验 `5~30` 字。
-  **这条接口没有「只存草稿」这一档**：`save=1` 提交后后台状态直接是 `status=3 已发布`、公开页可访问；
-  `save=0` 恒 `7050 保存失败`。所以 `--live` = `save=1` 提交（进审核队列），`--draft` 一律不提交（详见「修复」）。
+  **这条接口没有「只存草稿」这一档**：`save` 非 0 即提交并发布（`1`/`3`/`4` 等价，后台 `status=6 审核中`
+  → `status=3 已发布`、公开页可访问）；`save=0` 是编辑器发布档，要浏览器风控签名（`msToken`/`a_bogus`/
+  `tt-anti-token`/`x-secsdk-csrf-token`），脚本重放恒 `7050 保存失败`；`save=2` 回 `5009 发布失败`。
+  所以 `--live` = `save=1` 提交（进审核队列），`--draft` 一律不提交（详见「修复」）。
 - **头条图片转存管线**（`rehostToutiaoImages` / `uploadToutiaoImage` / `collectImgSrcs` / `rewriteHtmlImgs`）：
   头条是唯一「外链也必须转存」的平台——正文任一非头条域名图片会让整篇被拒 `7115 图片uri非法`。实现为：正文所有
   `<img>` 逐张下载 → multipart 上传头条 CDN → 按 `origin_web_uri` 改写成 `<img src="<头条链接>" web_uri="<头条uri>">`；
@@ -65,20 +67,50 @@ cspub 版本变更记录。版本号规则沿用 cjh：重大更新递增中间�
 - **头条 `X-CSRFToken` 兜底键名少一个下划线**：本机这串 Cookie 只有 `csrf_session_id`，旧代码取 `csrf_sessionid`
   永远得到空串（等于把空 CSRF 头发出去）。现按 `csrftoken` → `csrf_session_id` → `passport_csrf_token` 依次取。
 - **头条 `--draft` 其实在静默公开发文**：这个坑代价最大。`save=1` 一直被当成「存草稿」，但实测提交后
-  后台列表状态是 `status=3 已发布`、`https://www.toutiao.com/item/{pgc_id}/` 回 `HTTP 200`；反过来
+  后台列表状态是 `status=3 已发布`、`https://www.toutiao.com/article/{pgc_id}/` 回 `HTTP 200`；反过来
   `save=0`（原 `--live`）恒回 `7050 保存失败`——补 `abstract`/`pgc_feed_covers`、改成「先建草稿再按
   pgc_id 提交」的两阶段，分别得到 `7050` 与 `3014 审核中，无法修改`；`save_ugc_draft`（form 与 JSON 都试）
   恒回 `1066 草稿内容为空`。**结论：没有可用的真草稿通道**。现在 `--live` = `save=1` 提交，
   `--draft` **一律不提交**并打印原因，把「要不要公开」交回用户——宁可少一个功能，不可再静默发出去。
+- **头条 `save` 取值矩阵（2026-11-06 真机 A/B，补齐上一轮的空白）**：`save=0` → `7050`；
+  `save=1`/`save=3`/`save=4` → `code 0` + `pgc_id`，回读文章列表均为 `status=6 审核中`（随后转 `已发布`）；
+  `save=2` → `5009 发布失败，请重试`。**`save=0` 的失败不是字段缺失**：按抓包形态带齐整套编辑器字段
+  （`source=29`/`extra`/`title_id`/`mp_editor_stat`/`draft_form_data`/`search_creation_info` 等 25 字段）
+  与真实草稿 `pgc_id` 仍回 `7050`；再原样补上 `msToken`/`a_bogus` 与 `tt-anti-token`/`x-secsdk-csrf-token`
+  也仍是 `7050`——这些是 webmssdk 的一次性风控产物，重放即失效，**脚本无法复现 `save=0`**。
+  `save=1/3/4` 这条免风控通路的发现，解释了为什么同一工具里「另存一档就一定发布」。
+- **头条草稿箱客观存在，但没有脚本写入通道**：`GET /mp/agw/creator_center/draft_list?type=0&count=20&app_id=1231`
+  回 `{"code":0,"draft_list":[…17 条…]}`（`draft_type=2`，`gid` 即 `pgc_id`），
+  `GET /mp/agw/article/edit?pgc_id=…&format=json` 能读回草稿正文——这批真草稿全部由**编辑器自动保存**产生。
+  `save_ugc_draft` 实测 `draft_type=1` → `1066 草稿内容为空`（`content`/`article_content`/`draft_content`/
+  `graphic_content`/`content_html`/`body` 六个键名全试过），`draft_type=2` → `1064 草稿类型参数错误`。
+  因此 `--draft` 对头条保持「安全拒绝 + 打印证据」，不冒充能存草稿。
+- **`cspub` 回显版本号与实际版本不一致**：`main.cj:usage()` 里硬编码 `v0.2.6`，而 `cjpm.toml` 已是 `0.3.0`，
+  跑起来会看到错的版本。已同步为 `0.3.0` 并加注释说明「版本号唯一真相在 `cjpm.toml`，此处仅回显」。
 - **头条图片上传的两处硬参数**：`upload_picture` 必须以 `?type=json&...&encode=utf-8` 且**带尾斜杠**的形态请求，
   旧的 `?type=ueditor&...`（无尾斜杠）恒回 `1050 图片上传失败`；请求还必须带 `x-requested-with: XMLHttpRequest`，
   缺了同一张图同样回 `1050`。补齐后同一张图回 `code 0` + `web_uri`。
 - **头条上传的成功判据不能只看 `state`**：这份响应是**扁平结构**（无 `data` 包裹），且实测成功时 `state` 可能为空串；
   现改为 `code == 0` 且拿到 `web_uri` 即算成功，`pubUrl` 依次兜底 `url` → `origin_web_url` → `web_url`。
 
+### 文档
+
+- **README 与官网平台清单同步到十家**：README 顶部徽章 `star/new_badge.svg` → `star/badge.svg`；两侧平台清单补齐
+  腾讯云开发者社区 / 语雀 / 头条号 / SegmentFault，官网平台矩阵新增 4 张卡片（共 10 张），
+  「发遍六个平台」及 `<meta name="description">` / `og:*` / JSON-LD 描述全部改为十平台。
+- **官网版本回显对齐 `cjpm.toml`**：`website/index.html` 的 `softwareVersion`、导航 `brand__ver`、页脚三处
+  `v0.2.6` → `v0.3.0`；页面内版本串现仅剩 `0.3.0`。
+- **README 修三处与实现不符的说明**：腾讯云 `--draft` 是**真存草稿**（旧写「dry-run，无草稿态」）、接口是
+  `column/article`（旧写已废弃的 `addArticle`）、`CSPUB_TENCENT_TAG_IDS` 必填且专栏须为自己已加入的；
+  `whoami` 已支持任意平台（`yuque`/`segmentfault` 会联网真验）；「图片转存」一节由「只讲 CSDN」改为按平台策略总述；
+  用法块补 `imgs` 与 `--platform`。
+- **`src/yuque.cj` 的 UA 版本串** `cspub/0.2.6` → `cspub/0.3.0` 并加注释（其余平台 UA 不带版本号）；
+  **`docs/发布与版本维护.md`**「当前状态」改为「已发布 v0.2.6 / 待发布 v0.3.0（`cjpm.toml` 已置，未打 tag）」。
+
 ### 测试
 
 - `cjpm test` **81 个用例全绿 / FAILED: 0**（本轮腾讯云 15 + jsonpack 4），`cjpm build` **零警告**。
+- 官网结构校验：`div` 开合 134/134、`section` 10/10、平台卡片 10 张，页面内版本串只剩 `0.3.0`。
 - 头条断言从「JSON 结构」改为「form 字段」：守住 `save=0` / `save=1`、`pgc_id=0`、
   `pgc_feed_covers=%5B%5D`、`content=%3Cp%3Ex%3C%2Fp%3E`（尖括号与斜杠必须转义），并加一条
   `startsWith("{") == false` 把「退回 JSON body」这个已证伪的形态钉死在测试里。
@@ -90,11 +122,17 @@ cspub 版本变更记录。版本号规则沿用 cjh：重大更新递增中间�
 - 腾讯云**已无未验证项**：草稿（`draftId 341903` / `341905`）、图片转存（回显 `图片（腾讯云图床）：成功 2，失败 0`）、
   正式发布（`articleId 2777717`）三条链路均端到端跑通，证据见上文「新增」与 `docs/多平台发文调研.md` §11.3 的 ⑦。
 - 语雀的**端到端发布没有跑**：本机没有语雀 Token。当前交付边界是「请求体构造 + 响应解析 + 错误映射全部有单测覆盖」，**不等于线上真能发出去**。拿到凭证后须真发一篇（先草稿）并回显文档直链才算跑通。
-- 头条号**已无未验证项，且实测发现「草稿档」根本不存在**：`save=1` 提交后后台列表状态为 `status=3 已发布`，
-  公开页 `https://www.toutiao.com/item/7704929083666334258/`、`.../7704932867448603187/` 均回 `HTTP 200`
-  （后者先 `status=6 审核中`，数分钟后自动转 `已发布`）；图片管线回显「成功 2，失败 0」，转存直链 `curl`
-  回 `HTTP 200 / PNG 100x100`，正文 `<img>` 已带 `web_uri`。`save=0` 恒 `7050`、`save_ugc_draft` 恒 `1066`，
-  所以「只存草稿」在当前接口面下不可用，`--draft` 已改为拒绝提交（详见「修复」）。
+- 头条号**已无未验证项，且实测确认「草稿档」在无浏览器环境下不可实现**：`save=1` 提交后后台列表状态为
+  `status=6 审核中` → 数分钟自动转 `status=3 已发布`。**本轮回归实跑**：`--live` 提交
+  `pgc_id 7704942273524236826` → 后台先 `审核中` 后 `已发布`，公开页
+  `https://www.toutiao.com/article/7704942273524236826/` 回 `HTTP 200 / 72914 bytes`（验完即删）；
+  早前的 `.../7704932867448603187/`、`.../7704929083666334258/` 同样 200。
+  注意 `/item/<id>/` 是老路径，同日实测**已 404**，`toutiaoArticleUrl` 用的正是 `/article/`。
+  图片管线回显「成功 2，失败 0」，转存直链 `curl` 回 `HTTP 200 / PNG 100x100`，正文 `<img>` 已带 `web_uri`
+  （反复调试同一篇会触发限流回 `1050`，那是平台行为不是代码 bug）。
+  `save` 取值矩阵：`0 → 7050`（补齐 25 个编辑器字段 + 原样风控四件套仍 7050）、`1/3/4 → 提交并发布`、
+  `2 → 5009`；`save_ugc_draft` `draft_type=1 → 1066`、`draft_type=2 → 1064`。
+  所以「只存草稿」写不进去，`--draft` 已改为拒绝提交（详见「修复」）。
 - 头条**同名标题是否判重**未单独验证：本轮 3 篇同名「仓颉多平台发文工具」均提交成功，未触发查重拦截；
   但这不足以证明头条没有查重策略。
 - SegmentFault 的**端到端发布没有跑**：本机没有思否登录态。已单测覆盖「token 抠取（含未登录空串与锚点缺失）/ 请求体字段与 tags 数组 / cover 空值不带 / HTML 转义 / 响应解析（字符串错误体、对象、坏 JSON）」。**未经真机验证的三项**：①成功响应体的具体形状——正因未知，成功判据已放宽为「HTTP 200 即视为已提交，抠到 id 才打印」，不会把已发出的文章报成失败；②`tags` 传**标签名数组**（编辑器传入形态），若后端要求标签 id 会回参数错误；③本模块**没有**调用 `/gateway/image` 上传本地图片（multipart 字段名登录后才可知），正文图片统一走 `CSPUB_ATOMGIT_TOKEN` 转 AtomGit 外链。跑通凭证：`--draft` 后草稿箱 <https://segmentfault.com/user/draft> 可见该篇，`--live` 后文章管理 <https://segmentfault.com/user/articles> 可见（思否有审核队列，发布成功≠已公开）。

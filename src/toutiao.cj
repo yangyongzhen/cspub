@@ -17,8 +17,9 @@
  * 拿回 web_uri 后把 <img> 改写成 `<img src="<头条链接>" web_uri="<头条uri>">`。
  * 因此本地图与外链图在这里是同一套管线，不像别的平台只处理本地图。
  *
- * 草稿：publish 请求体的 save 字段，0=发布、1=存草稿（按社区实现惯例，**未经真机验证**——
- * 本机无头条登录态，端到端发布待凭证补齐后确认，见 CHANGELOG）。
+ * 草稿/发布：publish 请求体的 save 字段。实测（2026-11-06）：save=1/3/4 全是「提交并发布」，
+ * save=0 是编辑器发布档、需浏览器风控签名（脚本不可用），save=2 回 5009；本工具只走 save=1，
+ * 头条没有脚本可用的草稿档（详见 publishToToutiao 函数头矩阵）。
  */
 package cspub
 
@@ -70,7 +71,8 @@ public func toutiaoTitleOk(title: String): Bool {
  * 头条 /mp/agw/article/publish 只吃表单编码：同样的字段换成 JSON body 一律回
  * 7050「保存失败」（2026-11-06 实测：JSON → 7050；同一 URL 换成
  * application/x-www-form-urlencoded → code 0 + pgc_id）。
- * save: 0=发布、1=草稿；pgc_id 传 "0" 表示新建；封面走 pgc_feed_covers（"[]"=不设封面）。 */
+ * save: 实测非 0 即「提交并发布」（1/3/4 等价），0 是编辑器档、需浏览器风控签名；pgc_id 传 "0"
+ * 表示新建；封面走 pgc_feed_covers（"[]"=不设封面）。 */
 public func buildToutiaoArticleForm(title: String, html: String, save: Int64, coverJson: String): String {
     let covers = if (coverJson.size > 0) { coverJson } else { "[]" }
     let fields = ArrayList<StrKV>()
@@ -369,12 +371,20 @@ public func rehostToutiaoImages(cookie: String, csrf: String, html: String,
 
 /** 头条号发文入口。
  *
- * **语义警告（2026-11-06 实测）**：头条这个 publish 接口的 `save=1` 不是「存草稿」，
- * 提交后列表状态是 `status=3 已发布`，公开页 `https://www.toutiao.com/item/{pgc_id}/` 回 200；
- * `save=0` 反而恒回 7050「保存失败」（补 abstract/封面、换成两阶段「先建草稿再按 pgc_id 提交」
- * 全是 7050 或 3014）；真草稿接口 `save_ugc_draft` 恒回 1066「草稿内容为空」。
- * 所以在这里**只有一条通道**：`--live` 用 save=1 提交（进审核队列）；`--draft` 一律不提交——
- * 否则就是「以为存草稿、实际已公开发文」的静默骗人。
+ * **通道实测矩阵（2026-11-06，真机 A/B）**：
+ * - `save=0`：编辑器「点发布」用的档位，**需要浏览器风控签名**——URL 上的 `msToken`/`a_bogus`
+ *   与请求头 `tt-anti-token`/`x-secsdk-csrf-token` 都是 webmssdk 的一次性产物，原样重放立即失效：
+ *   带全套编辑器字段（extra/title_id/draft_form_data/mp_editor_stat 等）+ 真实草稿 pgc_id + 原样风控值，
+ *   仍恒回 `7050 保存失败`。脚本通道不可用。
+ * - `save=1` / `save=3` / `save=4`：免风控，`code 0` → 后台 `status=6 审核中` → 数分钟后
+ *   `status=3 已发布`，公开页可访问。**这是脚本唯一能走的发布通道**。
+ * - `save=2`：`5009 发布失败，请重试`。
+ * - 真草稿通道 `save_ugc_draft`：`draft_type=1` 恒 `1066 草稿内容为空`（内容字段名未找到），
+ *   `draft_type=2` 回 `1064 草稿类型参数错误`；草稿箱接口 `creator_center/draft_list` 里那 17 条真草稿
+ *   全部由编辑器自动保存产生，纯 HTTP 复现不出来。
+ *
+ * 因此：`--live` 用 `save=1` 提交（已真机核验）；`--draft` 一律不提交——头条没有脚本可用的存草稿
+ * 通道，硬发 save=1 就是「以为存草稿、实际已公开发文」的静默骗人。
  * 图片与别的平台相反：**外链也要转存**，否则整篇被拒 7115。 */
 public func publishToToutiao(cookie: String, csrf: String, a: Article, publishNow: Bool,
     insecure: Bool, atomgitToken: String, atomgitRepo: String, atomgitBranch: String,
@@ -382,10 +392,10 @@ public func publishToToutiao(cookie: String, csrf: String, a: Article, publishNo
 
     // ⓪ 没有草稿通道：默认档必须**什么都不发**，把选择权交回用户
     if (!publishNow) {
-        println("头条号：本次未提交（源码里也没有「只存草稿」这条路可走）")
-        println("原因：该 publish 接口的 save=1 实测是「提交并发布」——后台列表直接变成 status=3 已发布，")
-        println("      公开页 https://www.toutiao.com/item/{pgc_id}/ 可访问；save=0 恒 7050「保存失败」；")
-        println("      save_ugc_draft 恒 1066「草稿内容为空」。为了不出现「以为存草稿、其实已公开」，默认档不提交。")
+        println("头条号：本次未提交（头条的 publish 接口没有脚本可用的「只存草稿」通道）")
+        println("证据：save=1/3/4 都是「提交并发布」（后台 status=6 审核中 → status=3 已发布，公开页可访问）；")
+        println("      save=0 是编辑器发布档，要浏览器风控签名（msToken/a_bogus/tt-anti-token），重放即失效 → 7050；")
+        println("      草稿接口 save_ugc_draft 回 1066/1064，草稿箱里的真草稿只能由编辑器自动保存产生。")
         println("要真发一篇：加 --live（会进审核队列、公开可见、不可撤回）")
         return 1
     }
@@ -451,6 +461,9 @@ public func publishToToutiao(cookie: String, csrf: String, a: Article, publishNo
         println(r.text)
         if (trimAscii(r.text).contains("7115")) {
             println("提示：7115 = 图片 uri 非法。正文里有非头条域名的图，必须先转存头条 CDN")
+        }
+        if (code == 5009) {
+            println("提示：5009 = 发布失败，请重试（save=2 档位的固定回执，本工具不走这个档位）")
         }
         return 1
     }

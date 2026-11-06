@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>cspub · 一份 Markdown，发遍六个技术平台</title>
-<meta name="description" content="cspub 是用华为仓颉语言写的多平台发文 CLI：读带 front-matter 的 Markdown，自动渲染 HTML、按平台转存图片、签名发文，默认存草稿。支持 CSDN / 知乎 / 百家号 / 博客园 / 掘金 / 开源中国，主链路零第三方依赖。">
-<meta name="keywords" content="仓颉,cspub,CSDN,知乎,掘金,开源中国,百家号,博客园,Markdown,自动发文,多平台发布,CLI,图片转存">
+<title>cspub · 一份 Markdown，发遍十个技术平台</title>
+<meta name="description" content="cspub 是用华为仓颉语言写的多平台发文 CLI：读带 front-matter 的 Markdown，自动渲染 HTML、按平台转存图片、签名发文，默认存草稿。支持 CSDN / 知乎 / 百家号 / 博客园 / 掘金 / 开源中国 / 腾讯云开发者社区 / 语雀 / 头条号 / SegmentFault 思否，主链路零第三方依赖。">
+<meta name="keywords" content="仓颉,cspub,CSDN,知乎,掘金,开源中国,百家号,博客园,腾讯云开发者社区,语雀,头条号,SegmentFault,思否,Markdown,自动发文,多平台发布,CLI,图片转存">
 <meta name="author" content="cspub contributors">
 <meta name="theme-color" content="#0a0b0f">
 <meta name="robots" content="index,follow">
@@ -15,8 +15,8 @@
 <meta property="og:site_name" content="cspub">
 <meta property="og:locale" content="zh_CN">
 <meta property="og:url" content="https://yangyongzhen.github.io/cspub/">
-<meta property="og:title" content="cspub · 一份 Markdown，发遍六个技术平台">
-<meta property="og:description" content="仓颉写的多平台发文 CLI：自动渲染 HTML、按平台转存图片、签名发文，默认草稿。CSDN / 知乎 / 百家号 / 博客园 / 掘金 / 开源中国。">
+<meta property="og:title" content="cspub · 一份 Markdown，发遍十个技术平台">
+<meta property="og:description" content="仓颉写的多平台发文 CLI：自动渲染 HTML、按平台转存图片、签名发文，默认草稿。CSDN / 知乎 / 百家号 / 博客园 / 掘金 / 开源中国 / 腾讯云开发者社区 / 语雀 / 头条号 / SegmentFault。">
 <meta property="og:image" content="https://yangyongzhen.github.io/cspub/assets/imgs/cspub-flow.png">
 <meta name="twitter:card" content="summary_large_image">
 <script type="application/ld+json">
@@ -26,9 +26,9 @@
   "name": "cspub",
   "applicationCategory": "DeveloperApplication",
   "operatingSystem": "Linux, Windows",
-  "softwareVersion": "0.2.6",
+  "softwareVersion": "0.3.0",
   "license": "https://opensource.org/licenses/MIT",
-  "description": "华为仓颉实现的多平台发文 CLI：Markdown + front-matter 到 CSDN / 知乎 / 百家号 / 博客园 / 掘金 / 开源中国，自动图片转存与平台签名。",
+  "description": "华为仓颉实现的多平台发文 CLI：Markdown + front-matter 到 CSDN / 知乎 / 百家号 / 博客园 / 掘金 / 开源中国 / 腾讯云开发者社区 / 语雀 / 头条号 / SegmentFault，自动图片转存与平台签名。",
   "url": "https://yangyongzhen.github.io/cspub/",
   "sameAs": [
     "https://atomgit.com/qq8864/cspub",
@@ -53,7 +53,7 @@
         <circle cx="53" cy="32" r="3.2" fill="#3fd8a4"/>
       </svg>
       cspub
-      <span class="brand__ver">v0.2.6</span>
+      <span class="brand__ver">v0.3.0</span>
     </a>
     <button class="nav__toggle" id="navToggle" aria-label="展开导航" aria-expanded="false">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
@@ -80,7 +80,7 @@
     <div class="hero__grid">
       <div class="hero__copy reveal">
         <span class="hero__badge"><b>仓颉</b> 用华为仓颉语言写的发文 CLI · MIT</span>
-        <h1>一份 Markdown，<br>发遍<span class="hl">六个平台</span>。</h1>
+        <h1>一份 Markdown，<br>发遍<span class="hl">十个平台</span>。</h1>
         <p class="hero__sub">
           你只写带 front-matter 的 Markdown。剩下的它来做：渲染成各平台要的 HTML、
           按平台把图片转到对的图床、算好签名、发成草稿，最后回显文章 id。
@@ -181,6 +181,38 @@
         </div>
         <p class="pf__desc">官方 MetaWeblog API，纯 HTTP 无 Cookie，令牌即身份</p>
       </div>
+      <div class="pf reveal">
+        <div class="pf__top">
+          <span class="pf__dot" style="background:#0052d9"></span>
+          <span class="pf__name">腾讯云开发者社区</span>
+          <span class="pf__how">COOKIE</span>
+        </div>
+        <p class="pf__desc">编辑器同款 RPC <code>column/article</code>，纯 Cookie 零签名；<code>--draft</code> 真存草稿并回显 draftId，标签与已加入的专栏必填</p>
+      </div>
+      <div class="pf reveal">
+        <div class="pf__top">
+          <span class="pf__dot" style="background:#00b96b"></span>
+          <span class="pf__name">语雀</span>
+          <span class="pf__how">OPENAPI</span>
+        </div>
+        <p class="pf__desc">官方 OpenAPI v2 + <code>X-Auth-Token</code>，Markdown 原样提交；<code>--draft</code> 建成 <code>public=0</code> 私密文档</p>
+      </div>
+      <div class="pf reveal">
+        <div class="pf__top">
+          <span class="pf__dot" style="background:#f04142"></span>
+          <span class="pf__name">头条号</span>
+          <span class="pf__how">COOKIE</span>
+        </div>
+        <p class="pf__desc">模拟后台 <code>mp/agw</code> 接口 + <code>X-CSRFToken</code>；正文图片必须全转头条 CDN，否则整篇 <code>7115</code> 拒稿</p>
+      </div>
+      <div class="pf reveal">
+        <div class="pf__top">
+          <span class="pf__dot" style="background:#009a61"></span>
+          <span class="pf__name">SegmentFault 思否</span>
+          <span class="pf__how">GATEWAY</span>
+        </div>
+        <p class="pf__desc"><code>/gateway</code> 网关 + 写文章页实时取的 <code>Token</code>（与 Bearer 双头同值）；<code>--draft</code> 与 <code>--live</code> 是两条不同端点</p>
+      </div>
     </div>
   </div>
 </section>
@@ -267,7 +299,7 @@
         <li>
           <div>
             <h4>按平台鉴权</h4>
-            <p>CSDN 走阿里云网关风格 HMAC 签名的 <span class="mono">x-ca-*</span> 头；知乎/掘金/开源中国用登录 Cookie；博客园用令牌。</p>
+            <p>CSDN 走阿里云网关风格 HMAC 签名的 <span class="mono">x-ca-*</span> 头；知乎/掘金/开源中国/腾讯云/头条号用登录 Cookie（头条另带 <span class="mono">X-CSRFToken</span>）；博客园用 MetaWeblog 令牌；语雀用 OpenAPI Token；SegmentFault 用 Cookie + 发文时实时取的 <span class="mono">Token</span>。</p>
           </div>
         </li>
         <li>
@@ -293,7 +325,7 @@
     <div class="section-head reveal">
       <span class="sec-no">03 / 图片</span>
       <h2 class="section-title">发文前，先把图搬到不会失效的地方</h2>
-      <p class="lead">外链图是文章最常见的慢性死法：源站改防盗链、图床停服、或者平台直接把站外图剥掉。所以图片处理按平台分三套策略。</p>
+      <p class="lead">外链图是文章最常见的慢性死法：源站改防盗链、图床停服、或者平台直接把站外图剥掉。所以图片处理按平台分几套策略：必须转平台图床的、接受外链的、直接用平台自带图床的。</p>
     </div>
 
     <div class="rehost__grid">
@@ -353,6 +385,20 @@
             <p>知乎会剥离站外图，所以图片提交前先转存到知乎 CDN，正文引用同步回写。</p>
           </div>
         </div>
+        <div class="strategy__item">
+          <svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>
+          <div>
+            <h4>头条号 · 全量转存，无一例外</h4>
+            <p>头条是唯一「外链也强制转存」的平台：正文里任何非头条域名图片，整篇回 <code>7115 图片uri非法</code>。转存失败会先告警，不静默照发。</p>
+          </div>
+        </div>
+        <div class="strategy__item">
+          <svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>
+          <div>
+            <h4>腾讯云 · 转它自家图床</h4>
+            <p>只给图片 <code>url</code> 就来换直链，回 <code>developer.qcloudimg.com</code>；已是腾讯云域名的图不重复转。</p>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -406,7 +452,7 @@
         <div class="shot">
           <img src="assets/imgs/cookie-export-tool.png" alt="cookie-export 工具界面：五个平台卡片，每个带登录 / 提取 / 导出按钮与字段徽标" width="1000" height="714" loading="lazy">
           <div class="shot__cap">
-            <span>cookie-export · 覆盖 5 个 cookie 平台</span>
+            <span>cookie-export · 覆盖 9 个 cookie 平台（截图为早期版本）</span>
             <a href="https://atomgit.com/qq8864/cj-tauri/tree/main/examples/cookie-export" target="_blank" rel="noopener">源码 →</a>
           </div>
         </div>
@@ -504,6 +550,10 @@ cspub publish 我的文章.md --platform juejin
 cspub publish 我的文章.md --platform oschina
 cspub publish 我的文章.md --platform baijiahao
 cspub publish 我的文章.md --platform cnblogs
+cspub publish 我的文章.md --platform tencent
+cspub publish 我的文章.md --platform yuque
+cspub publish 我的文章.md --platform toutiao
+cspub publish 我的文章.md --platform segmentfault
 
 cspub publish 我的文章.md --live               <span class="c"># 直接发布</span>
 cspub publish 我的文章.md --update <span class="a">159873342</span>   <span class="c"># 原地更新（CSDN）</span></pre>
@@ -595,8 +645,8 @@ cspub help</pre>
         <span class="proof__meta">2026-10-21 · 端到端</span>
       </div>
       <div class="proof__item reveal">
-        <span class="proof__num">6</span>
-        <span class="proof__label">覆盖平台：CSDN / 知乎 / 掘金 / 开源中国 / 百家号 / 博客园</span>
+        <span class="proof__num">10</span>
+        <span class="proof__label">覆盖平台：CSDN / 知乎 / 掘金 / 开源中国 / 百家号 / 博客园 / 腾讯云开发者社区 / 语雀 / 头条号 / SegmentFault</span>
         <span class="proof__meta">各自独立鉴权通道</span>
       </div>
       <div class="proof__item reveal">
@@ -652,7 +702,7 @@ cspub help</pre>
       <details>
         <summary>为什么不走各平台的官方开放 API？</summary>
         <div class="a">
-          <p>大多数平台没有可直接创建文章的开放 API，能发的是「编辑器同款内部接口」——CSDN 是阿里云网关风格的 HMAC 签名，知乎/掘金/开源中国凭登录 Cookie，博客园恰好有官方 MetaWeblog 接口。</p>
+          <p>大多数平台没有可直接创建文章的开放 API，能发的是「编辑器同款内部接口」——CSDN 是阿里云网关风格的 HMAC 签名，知乎/掘金/开源中国/腾讯云/头条号凭登录 Cookie（头条另带 <code>X-CSRFToken</code>），SegmentFault 走它前端的 <code>/gateway</code> 网关，博客园恰好有官方 MetaWeblog 接口，语雀有官方 OpenAPI v2。</p>
           <p>因此每个平台一条独立适配通道，各自的鉴权、图片、字段约定都不同；这也决定了它不可能是一个「统一 API 客户端」。</p>
         </div>
       </details>
@@ -707,7 +757,7 @@ cspub help</pre>
           </svg>
           cspub
         </a>
-        <p>一份 Markdown 发遍六个技术平台。用华为仓颉语言写的发文 CLI，MIT 开源，产物是单文件。</p>
+        <p>一份 Markdown 发遍十个技术平台。用华为仓颉语言写的发文 CLI，MIT 开源，产物是单文件。</p>
       </div>
       <div>
         <h5>项目</h5>
@@ -737,7 +787,7 @@ cspub help</pre>
       </div>
     </div>
     <div class="footer__bottom">
-      <span>MIT Licensed · v0.2.6 · 用仓颉写的</span>
+      <span>MIT Licensed · v0.3.0 · 用仓颉写的</span>
       <span>本站无第三方依赖：手写 HTML / CSS / JS，无字体与统计外链</span>
     </div>
   </div>

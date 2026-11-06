@@ -120,7 +120,8 @@ main(args: Array<String>): Int64 {
 }
 
 func usage(): Unit {
-    println("cspub v0.2.6 — 多平台自动发文 CLI（仓颉实现）：csdn / zhihu / baijiahao / cnblogs / juejin / oschina / tencent / yuque / toutiao / segmentfault")
+    // 版本号唯一真相在 cjpm.toml 的 version，此处仅回显，改动时须同步
+    println("cspub v0.3.0 — 多平台自动发文 CLI（仓颉实现）：csdn / zhihu / baijiahao / cnblogs / juejin / oschina / tencent / yuque / toutiao / segmentfault")
     println("")
     println("用法:")
     println("  cspub check   <文章.md>            解析 front-matter + 渲染统计（不联网）")
@@ -152,7 +153,7 @@ func usage(): Unit {
     println("  toutiao:   CSPUB_TOUTIAO_COOKIE（须含 sessionid 或 tt_webid）+ 可选 CSPUB_TOUTIAO_CSRF")
     println("             模拟后台 mp/agw 接口，X-CSRFToken 默认自动取 cookie 的 csrftoken")
     println("             图片硬约束：正文每张图都要转存头条 CDN，任何非头条域名 → 整篇拒稿 7115")
-    println("             **头条没有草稿通道**：save=1 提交即公开发布（进审核队列），因此只能用 --live")
+    println("             **头条没有草稿通道**：save 非 0 即提交发布（1/3/4 等价），save=0 需浏览器风控签名")
     println("  segmentfault: CSPUB_SEGMENTFAULT_COOKIE（思否登录后的整串 Cookie）")
     println("             走 /gateway 网关，零签名；Token 于发文时从写文章页 __NEXT_DATA__ 实时取")
     println("             正文是 HTML 富文本，--draft 存草稿箱、--live 直接发布")
@@ -387,7 +388,7 @@ func cmdWhoami(args: Array<String>): Int64 {
         println("X-CSRFToken : ${if (tCsrf.size > 0) { "已取得（${tCsrf.size} 字节）" } else { "**缺失**：cookie 里没有 csrftoken" }}")
         println("Cookie 长度 : ${tCookie.toArray().size} 字节")
         println("提示：头条无开放发布 API，本工具模拟后台 mp/agw 接口；正文任一非头条域名图片都会整篇拒稿（7115）")
-        println("      头条没有草稿通道：save=1 提交即发布（有审核队列，约每日 4 篇上限），故只支持 --live")
+        println("      头条没有草稿通道：save 非 0 即发布（有审核队列，约每日 4 篇上限）；save=0 需浏览器风控签名")
         return if (hasSess || hasWeb) { 0 } else { 1 }
     }
     if (platform == "segmentfault") {

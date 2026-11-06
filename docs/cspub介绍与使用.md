@@ -1,25 +1,25 @@
 ---
-title: 我用仓颉写了个多平台发文工具：一份 Markdown，一条命令发六个平台
+title: 我用仓颉写了个多平台发文工具：一份 Markdown，一条命令发十个平台
 tags: 仓颉,CLI工具,自动化,多平台发布,效率工具
 categories: 编程
-desc: cspub 是用华为仓颉实现的多平台发文 CLI——一份带 front-matter 的 Markdown，自动完成图片转存、HTML 渲染、网关签名与发布，支持 CSDN、知乎、百家号、博客园、掘金、开源中国六个平台，主链路零第三方依赖。
+desc: cspub 是用华为仓颉实现的多平台发文 CLI——一份带 front-matter 的 Markdown，自动完成图片转存、HTML 渲染、网关签名与发布，支持 CSDN、知乎、百家号、博客园、掘金、开源中国、腾讯云开发者社区、语雀、头条号、SegmentFault 思否十个平台，主链路零第三方依赖。
 draft: true
 origin_url: https://blog.csdn.net/m0_46384600/article/details/170149773
 ---
 
-# 我用仓颉写了个多平台发文工具：一份 Markdown，一条命令发六个平台
+# 我用仓颉写了个多平台发文工具：一份 Markdown，一条命令发十个平台
 
 写技术文章的人大概都有过这个体验：文章在本地 Markdown 里写得干干净净，往编辑器里一贴——图片全裂了。
 
 CSDN 对站外图片有防盗链，`<img>` 直连外部图床时返回的是 **HTTP 200 + 0 字节**。状态码看着挺好，页面上却只剩一个占位框。于是流程变成：下载图片、逐张上传、替换链接、重新检查排版。文章五分钟写完，图片折腾半小时。
 
-后来我开始了"一稿多投"的折腾：同一篇文章要发到 CSDN、知乎、掘金、开源中国、百家号、博客园，每个平台的编辑器各有各的脾气，图片策略各不相同，有的要传它自己的图床，有的会悄悄把站外图剥掉。六个平台贴六遍，一晚上就没了。
+后来我开始了"一稿多投"的折腾：同一篇文章要发到 CSDN、知乎、掘金、开源中国、百家号、博客园、腾讯云开发者社区、语雀、头条号、SegmentFault 思否，每个平台的编辑器各有各的脾气，图片策略各不相同，有的要传它自己的图床，有的会悄悄把站外图剥掉。十个平台贴十遍，一晚上就没了。
 
 于是我给自己写了个工具，叫 **cspub**。
 
 ## 它到底是什么
 
-一句话：**一份 Markdown（带 front-matter），一条命令发到一个平台；写六条命令就是六个平台。**
+一句话：**一份 Markdown（带 front-matter），一条命令发到一个平台；写十条命令就是十个平台。**
 
 ```bash
 cspub publish 我的文章.md --platform csdn       # CSDN（Cookie + 网关签名，默认发草稿）
@@ -28,6 +28,10 @@ cspub publish 我的文章.md --platform baijiahao  # 百家号（Cookie 浏览�
 cspub publish 我的文章.md --platform cnblogs    # 博客园（官方 MetaWeblog API，纯 HTTP）
 cspub publish 我的文章.md --platform juejin     # 掘金（Cookie 两步流，图片外链优先）
 cspub publish 我的文章.md --platform oschina    # 开源中国（Cookie 直通站点接口）
+cspub publish 我的文章.md --platform tencent    # 腾讯云开发者社区（纯 Cookie 零签名，--draft 真存草稿）
+cspub publish 我的文章.md --platform yuque      # 语雀（官方 OpenAPI v2 + Token，Markdown 原样提交）
+cspub publish 我的文章.md --platform toutiao    # 头条号（Cookie + X-CSRFToken，图片必须全量转存）
+cspub publish 我的文章.md --platform segmentfault  # SegmentFault 思否（/gateway 网关 + 页面取 Token）
 ```
 
 参数就两个是常用的：`--draft`（默认，发草稿）和 `--live`（直接公开）。CSDN 老文章要改内容，用 `--update <id>` 原地更新，不用重新发。
@@ -37,9 +41,9 @@ cspub publish 我的文章.md --platform oschina    # 开源中国（Cookie 直�
 ![cspub 发文数据流](https://yangyongzhen.github.io/cspub/assets/imgs/cspub-flow.png)
 
 1. 读 Markdown + front-matter（title / tags / categories / desc / draft）；
-2. **按平台转存图片**——CSDN 转 CSDN 图床，知乎转知乎 CDN，开源中国用它自带图床；
+2. **按平台转存图片**——CSDN 转 CSDN 图床，知乎转知乎 CDN，头条号转头条 CDN，腾讯云转腾讯云图床，开源中国用它自带图床；
 3. 把 Markdown 渲染成 HTML（各平台编辑器要的都是渲染后的 HTML，不是 Markdown 源文）；
-4. 按平台鉴权发文：CSDN 走阿里云 API 网关风格的 HMAC-SHA256 签名，知乎走 Cookie 草稿三步流，博客园走 MetaWeblog；
+4. 按平台鉴权发文：CSDN 走阿里云 API 网关风格的 HMAC-SHA256 签名，知乎/腾讯云/头条号走 Cookie（头条另带 `X-CSRFToken`），语雀走 OpenAPI Token，SegmentFault 走 `/gateway` 网关 + 页面实时取的 Token，博客园走 MetaWeblog；
 5. 回显文章链接和 id。
 
 ## 为什么用仓颉写
@@ -78,7 +82,7 @@ Windows 想交叉编译的话仓库里有 `./scripts/winbuild.sh`，产出 exe �
 
 ## 配置凭证：这是唯一麻烦的一步
 
-六个平台的鉴权方式没有一个是统一的，这是整件事里最烦的部分，我没法帮你消除，只能帮你省事。
+十个平台的鉴权方式没有一个是统一的，这是整件事里最烦的部分，我没法帮你消除，只能帮你省事。
 
 先说结论：**用 cookie-export 工具提取，别手抄。**
 
@@ -124,9 +128,9 @@ draft: true                # 缺省 true，publish 时 --live 或 draft: false �
 
 这两个命令看起来很朴素，但帮我省了很多次"发出去才发现排版炸了"。
 
-## 六个平台的脾气，我都试过了
+## 十个平台的脾气，我都试过了
 
-同样是"发文章"，六个平台的实现路径完全不同：
+同样是"发文章"，十个平台的实现路径完全不同：
 
 - **CSDN**：走它编辑器自己的接口 `bizapi.csdn.net/blog-console-api/v3/mdeditor/saveArticle`，请求要带**阿里云 API 网关风格的 HMAC-SHA256 签名**（`x-ca-*` 头），key/secret 就烙在 CSDN 公开的前端 JS 里，你只需要自己的登录 Cookie。正文必须是渲染后的 HTML。
 - **知乎**：Cookie 草稿接口三步流，图片必须转知乎自己的 CDN——知乎会剥掉站外图，这跟 CSDN 是两种脾气（一个是防盗链不显示，一个是直接去掉）。
@@ -134,6 +138,10 @@ draft: true                # 缺省 true，publish 时 --live 或 draft: false �
 - **开源中国**：直接打它站点的 `apiv1`，只要 Cookie 就能用。它有自己的图床（`/oschinapi/upload/img`），登录了就能传，所以图片优先走它自己的。
 - **百家号**：这个是唯一必须开浏览器的。纯 Cookie 直调它的发布接口不可行——React 发布按钮需要完整事件链，直调 API 缺 CSRF 一律 500。所以 Cookie 通道走 Playwright 自动化填表单，另外官方也给了开发者凭证通道（目前是定向邀请制）。
 - **博客园**：最省心的一个，官方 MetaWeblog API，纯 HTTP，不需要浏览器也不需要签名。
+- **腾讯云开发者社区**：走它编辑器自己的 RPC `/developer/services/ajax/column/article`，纯 Cookie、零签名。真正的坑全在字段语义上：`sourceType` 必须是 `1`（传 `0` 回 `-9996`）、原创**不能**带 `sourceDetail`（带空串回 `400`）、`tagIds` 不能为空（回 `-9993`）、专栏必须是自己**已加入**的（填别人的会回 `300031`）。正文还要先压成 Draft.js 的 `RawDraftContentState` 再 base64，三层编码错一层就是 `400`。
+- **语雀**：少数真有官方开放 API 的平台——OpenAPI v2 + `X-Auth-Token`，Markdown 原样提交让它自己渲染，不用我预渲染 HTML，反而最省事。
+- **头条号**：模拟后台 `mp/agw` 接口，Cookie + `X-CSRFToken`，而且**必须以 form-urlencoded 提交**（JSON body 恒回 `7050`）。它最怪的是保存语义：实测 `save=1/3/4` 全等于"提交并发布"，`save=2` 直接 `5009`，`save=0`（只存草稿）必须带 webmssdk 的一次性风控签名，重放即失效、脚本复现不了。所以这个平台的"草稿"我干脆不冒充，`--draft` 直接拒绝并打印原因。
+- **SegmentFault 思否**：走它前端的 `/gateway` 网关，`Token` 得从写文章页的 `__NEXT_DATA__` 里现取，还要同时放进 `Token` 和 `Authorization: Bearer` 两个头。
 
 有意思的是，越是"大厂"的平台，接口越是反直觉。CSDN 的签名看着唬人，其实逻辑很干净；百家号反过来，接口看着简单，实际上非走浏览器不可。
 
@@ -177,13 +185,13 @@ cspub imgs 我的文章.md      # 先预演：只扫描不联网，列出每张�
 
 ## 最后
 
-这个项目对我来说有个特殊意义：它是我在 [cjh](https://atomgit.com/qq8864/cjh) 里"自己写工具给自己用"的第一批成果之一。项目本身不大，但从签名对账、TLS 信任、UTF-8 字节语义到六套平台鉴权，每一处都是真刀真枪踩出来的。
+这个项目对我来说有个特殊意义：它是我在 [cjh](https://atomgit.com/qq8864/cjh) 里"自己写工具给自己用"的第一批成果之一。项目本身不大，但从签名对账、TLS 信任、UTF-8 字节语义到十套平台鉴权，每一处都是真刀真枪踩出来的。
 
 如果你也在一稿多投，欢迎拿去用、提 issue、或者直接把某个平台的适配改得更顺手。
 
 **相关链接：**
 
-- 官网（六平台矩阵、流水线图、实测数据）：<https://yangyongzhen.github.io/cspub/>
+- 官网（十平台矩阵、流水线图、实测数据）：<https://yangyongzhen.github.io/cspub/>
 - 项目主页（AtomGit，主仓）：<https://atomgit.com/qq8864/cspub>
 - GitHub 镜像：<https://github.com/yangyongzhen/cspub>
 - 桌面取证工具 cookie-export：<https://atomgit.com/qq8864/cj-tauri>

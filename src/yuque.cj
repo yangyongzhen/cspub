@@ -24,7 +24,8 @@ import stdx.net.http.*
 
 public const YUQUE_API: String = "https://www.yuque.com/api/v2"
 public const YUQUE_SITE: String = "https://www.yuque.com"
-const YUQUE_UA: String = "cspub/0.2.6 (+https://atomgit.com/qq8864/cspub)"
+// 版本串唯一真相在 cjpm.toml 的 version，发版时随此处一并更新（其余平台 UA 不带版本号）
+const YUQUE_UA: String = "cspub/0.3.0 (+https://atomgit.com/qq8864/cspub)"
 
 /** namespace 合法性：`user/repo` 或 `group/book_slug` 两段式，两段都不能空。
  * 单段名字会 404（不是权限问题），本地先拦掉能省一轮误判。 */
