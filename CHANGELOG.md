@@ -61,6 +61,28 @@ cspub 版本变更记录。版本号规则沿用 cjh：重大更新递增中间�
 | 图片预演 | `imgs docs/cjh内嵌接入-发布稿.md` | 列出 6 张待转存图（arch-diagram / embed-arch / web-ui / cjnote-ai-panel / ai-chat-agent / embed-brain） |
 | 腾讯云草稿留痕 | `publish … --platform tencent --draft`（`CSPUB_TENCENT_CLASSIFY_IDS=88542`、`TAG_IDS=10663,10308`） | 草稿 `draftId 342313`，编辑地址 `…/write?draftId=342313`；图片转存 `成功 6，失败 0`（对照：备用端点生效前 342310/342312 两次均 `成功 0，失败 6`） |
 
+### 文档
+
+- **README 重写**：首屏改为价值定位（「AI 时代的分发层——写完的文章，一条命令发遍十个平台」）+「为什么需要它」对照表
+  （凭证一次导出 / 图片按平台转存 / 默认草稿 / 预检挡掉注定失败的提交 / 可交给 agent 跑）；新增「支持的平台」十平台矩阵表
+  （鉴权方式 / 图片策略 / 每平台硬约束）与 `check --platform`、`tags`、`--force` 用法；「为什么是仓颉」「为什么自己写」两节合并去重；
+  已知限制补「头条号没有草稿通道」「百家号 Cookie 通道需 playwright」。
+- **`skills/cspub-publish.md`**：凭证表补齐十家（新增腾讯云 / 语雀 / 头条号 / SegmentFault），补 `tags --platform tencent` 与
+  `--force`/`--insecure` 语义、子命令速查表、各平台图片策略表、平台脾气（头条无草稿通道、腾讯云 `tagIds` 必填、
+  百家号标题 8-40 字符 + `origin_url`、语雀 namespace 两段、开源中国提交原始 Markdown）、失败速查。
+- **`skills/cspub-troubleshoot.md`**：按症状索引重写，补头条 `1050` 重传判据与 `7115` 图片域名、腾讯云 `-9993`/`300031`、
+  语雀 namespace `404`、`raw.gitcode.com` 被 CloudWAF 拦 `418` 的备用端点、转存失败门禁、开源中国 `40001`（Cookie 双前缀）等。
+- **版本回显统一**：官网 `website/index.html`（`softwareVersion` / 首屏角标 / 页脚）与 `docs/发布与版本维护.md`、
+  `src/yuque.cj` 的 `YUQUE_UA` 全部对齐 `0.3.1`。
+
+### 发布产物（v0.3.1）
+
+- `dist/cspub-v0.3.1-linux-x64`（12,232,688 B）与 `dist/cspub-v0.3.1-linux-x64.tar.gz`（4,016,358 B）。
+- `dist/cspub-v0.3.1-windows-x64.exe`（8,729,600 B，mingw strip 后）与 `-selfcontained.zip`（17,927,168 B，
+  含 `libboundscheck` / `libcangjie-runtime` / `libcrypto-3-x64` / `libssl-3-x64` 四个 DLL）。
+- `dist/SHA256SUMS` 四项 `sha256sum -c` 全部 `OK`；产物冒烟 `./cspub-v0.3.1-linux-x64 help` 回显
+  `cspub v0.3.1 — 多平台自动发文 CLI`（exit 0）。
+
 ## [Unreleased]
 
 新增四个平台通道：腾讯云开发者社区（纯 Cookie）、语雀（官方 OpenAPI v2 + Token）、头条号（模拟后台 mp/agw 接口）、SegmentFault 思否（`/gateway` 网关 + 页面取 Token）。其中**腾讯云已端到端跑通草稿与正式发布**（草稿 `draftId 341903`，正式文章 `articleId 2777717`，均服务端核验）；语雀 / SegmentFault 两家是「实现 + 单测」交付，**端到端发布待凭证**；头条号已端到端跑通（见「未验证」节）。

@@ -2,46 +2,85 @@
 
 # cspub
 
-**多平台文章发布助手 —— 用华为仓颉语言实现**
+**AI 时代的分发层 —— 写完的文章，一条命令发遍十个平台**
 
-一份 Markdown（带 front-matter），一条命令发到多个平台：CSDN / 知乎 / 百家号 / 博客园 / 掘金 / 开源中国 / 腾讯云开发者社区 / 语雀 / 头条号 / SegmentFault 思否，自动签名/登录、自动转存图片、默认发草稿。
+用华为仓颉语言写的发文 CLI。你只写一份带 front-matter 的 Markdown，
+剩下的它全包：渲染 HTML → 按平台转存图片 → 签名鉴权 → 提交发布 → 回显 article id。
 
-🌐 **官网** <https://yangyongzhen.github.io/cspub/> —— 平台矩阵、流水线、图片转存策略与实测数据都在那；静态站零第三方依赖（含源码 `website/`）。
+**不再逐个平台登录、粘贴、传图、调格式。** 凭证导一次，之后全程纯 HTTP，不再开浏览器。
+
+CSDN · 知乎 · 掘金 · 开源中国 · 博客园 · 百家号 · 腾讯云开发者社区 · 语雀 · 头条号 · SegmentFault
+
+🌐 **官网** <https://yangyongzhen.github.io/cspub/> —— 平台矩阵、流水线、图片转存策略与实测数据；静态站零第三方依赖（源码 `website/`）。
 
 > 国内 AtomGit 托管：[atomgit.com/qq8864/cspub](https://atomgit.com/qq8864/cspub)，与 GitHub 镜像同步更新（同一提交双端推送，ref 一致）。
 
-[![Language](https://img.shields.io/badge/%E8%AF%AD%E8%A8%80-%E4%BB%93%E9%A2%89%201.0.5%2B-ff69b4)](https://cangjie-lang.cn)
+[![Version](https://img.shields.io/badge/version-0.3.1-blue)](https://github.com/yangyongzhen/cspub/releases)
+[![Platforms](https://img.shields.io/badge/%E5%B9%B3%E5%8F%B0-10%20%E5%AE%B6-brightgreen)](#支持的平台)
+[![Language](https://img.shields.io/badge/%E8%AF%AD%E8%A8%80-%E4%BB%93%E9%A2%89%201.2.0-ff69b4)](https://cangjie-lang.cn)
 [![License](https://img.shields.io/badge/%E8%AE%B8%E5%8F%AF%E8%AF%81-MIT-green)](./LICENSE)
-[![Platform](https://img.shields.io/badge/%E5%B9%B3%E5%8F%B0-Linux%20%E5%AE%9E%E6%B5%8B-blue)](#已知限制)
+[![Deps](https://img.shields.io/badge/%E7%AC%AC%E4%B8%89%E6%96%B9%E4%BE%9D%E8%B5%96-0-lightgrey)](#实现要点也是坑)
 [![官网](https://img.shields.io/badge/%E5%AE%98%E7%BD%91-yangyongzhen.github.io%2Fcspub-ffb224)](https://yangyongzhen.github.io/cspub/)
 [![GitHub](https://img.shields.io/badge/GitHub-yangyongzhen%2Fcspub-181717?logo=github)](https://github.com/yangyongzhen/cspub)
 [![AtomGit](https://atomgit.com/qq8864/cspub/star/badge.svg)](https://atomgit.com/qq8864/cspub)
 
 </div>
 
+## 为什么需要它
+
+AI 已经把「写」自动化了，「发」却还停在手工：CSDN 要网关 HMAC 签名、知乎剥掉站外图、头条碰到非自家域名的图整篇拒稿（`7115`）、掘金要 token、腾讯云没标签就回 `-9993`……**十个平台十套脾气**，人肉逐个登录粘贴，是整条内容流水线里最贵、最容易翻车的一环。
+
+cspub 把这一环收成一条命令：
+
+| 你真正怕的事 | 它怎么防 |
+| --- | --- |
+| 又要挨个平台登录、手抄 Cookie | 凭证一次导出：`cookie-export` 内嵌浏览器登录一次，连 httpOnly 的 `z_c0` / `UserToken` / `sessionid` 都能取；导出后 cspub 全程纯 HTTP，**不再开浏览器** |
+| 图发出去裂了 / 平台把图剥了 | 按平台转存：CSDN / 知乎 / 头条 / 腾讯云必须进自家图床，掘金 / 思否走 AtomGit 外链，开源中国用它自带图床；内网地址拦截、拒绝 30x 重定向、单张限 12 MiB |
+| 手滑发到线上，删都删不干净 | 默认存草稿，`--live` 才真发；已发布的用 `--update <id>` 原地更新，不在平台堆重复稿 |
+| 发一次错一次，还白烧发文额度 | `check --platform` 纯本地预检（标题字数 / 图片域名 / 必填项），不联网就能拦下注定失败的稿；转存有失败默认中止，`--force` 才硬发 |
+| 没法交给 AI agent 跑 | 非交互、退出码可判、错误码原样回显、`CSPUB_DEBUG=1` 输出链路诊断——可直接串进 CI 或 agent 循环 |
+
+> 十家里九家纯 HTTP；只有百家号 Cookie 通道需要一个 Playwright 伴生脚本（它的官方 token 通道同样是纯 HTTP）。
+> 从 Markdown 到十平台全部用仓颉标准库 + stdx 实现（HMAC / Base64 / HTTP / JSON / TLS），**零第三方依赖**，编译成单文件二进制。
+
+## 快速上手
+
 ```bash
-cspub publish 我的文章.md --platform csdn       # CSDN（Cookie + 网关签名，默认发草稿）
-cspub publish 我的文章.md --platform zhihu      # 知乎专栏（Cookie 登录态，图片自动转存知乎 CDN）
-cspub publish 我的文章.md --platform baijiahao  # 百家号（Cookie 浏览器通道 / 开发者凭证）
-cspub publish 我的文章.md --platform cnblogs    # 博客园（官方 MetaWeblog API，纯 HTTP）
-cspub publish 我的文章.md --platform juejin     # 掘金（Cookie 两步流；图片外链优先，AtomGit 图床）
-cspub publish 我的文章.md --platform oschina    # 开源中国（Cookie 直通站点接口；图片走它自带图床）
-cspub publish 我的文章.md --platform tencent    # 腾讯云开发者社区（Cookie 零签名；--draft 真存草稿，回显 draftId）
-cspub publish 我的文章.md --platform yuque      # 语雀（官方 OpenAPI v2 + Token；--draft 建成私密文档）
-cspub publish 我的文章.md --platform toutiao    # 头条号（Cookie + X-CSRFToken；图片必须全转存头条 CDN）
-cspub publish 我的文章.md --platform segmentfault  # SegmentFault 思否（Cookie + 页面取 Token；--draft 存草稿箱）
-cspub publish 我的文章.md --live                # 直接发布
+cspub check   我的文章.md --platform toutiao   # 先本地预检：标题字数 / 图片域名 / 必填项（不联网）
+cspub imgs    我的文章.md                      # 预演图片去向：rehost / skip / BLOCKED（不联网）
+cspub publish 我的文章.md --platform toutiao   # 发草稿（默认）
+cspub publish 我的文章.md --platform toutiao --live   # 确认没问题，再公开发布
+cspub tags    --platform tencent               # 查本账号已加入的专栏与可用标签
 ```
+
+## 支持的平台
+
+十家通道，鉴权与图片策略各不相同，`--platform` 选目标（缺省 `csdn`）：
+
+| `--platform` | 平台 | 鉴权方式 | 图片策略 | 要留意 |
+| --- | --- | --- | --- | --- |
+| `csdn` | CSDN | 网关 HMAC-SHA256 签名（`x-ca-*`）+ Cookie | **必须转 CSDN 图床**（站外图防盗链，直连回 200 + 0 字节） | 单账号每日 1 篇，存草稿同算额度 |
+| `zhihu` | 知乎 | Cookie（`z_c0`）三步草稿流 | 转知乎 CDN（知乎剥离站外图） | — |
+| `juejin` | 掘金 | Cookie（`sessionid`）两步流 | 外链优先，配 AtomGit token 后整条链纯 HTTP | 分类/标签用后台内部 ID（可选） |
+| `oschina` | 开源中国 | Cookie（`oscid`）直通站点接口 | 用它自带图床 `oscimg` | 正文提交原始 Markdown，服务端自己转 HTML |
+| `cnblogs` | 博客园 | MetaWeblog 令牌（非登录密码），纯 HTTP 无 Cookie | best-effort | — |
+| `baijiahao` | 百家号 | 官方 token（定向邀请）/ Cookie + Playwright 填表 | best-effort | 需 `origin_url`、封面、标题 8–40 字 |
+| `tencent` | 腾讯云开发者社区 | Cookie（`skey` / `qcommunity_session`），零签名 | 服务端抓链转存 | `tagIds` 必填、专栏须自己已加入；正文 ≥140 字 |
+| `yuque` | 语雀 | 官方 OpenAPI v2 + `X-Auth-Token` | 原样引用 | namespace 必须是 `user/repo` 两段 |
+| `toutiao` | 头条号 | Cookie + `X-CSRFToken` | **必须全转存头条 CDN**，非头条域名整篇拒稿（`7115`） | 标题 5–30 字；无草稿通道，`--draft` 直接拒绝提交 |
+| `segmentfault` | SegmentFault 思否 | Cookie + 写文章页实时取的 `Token`（双头同值） | 公网 URL（配 AtomGit token 自动转外链） | `--draft` 存草稿箱 |
 
 ## 它做什么
 
-1. 读 Markdown + front-matter（title / tags / categories / desc / draft / origin_url）；
-2. **按平台自动转存图片**：CSDN 外链图转 CSDN 图床（防盗链），知乎图转知乎 CDN（知乎剥离站外图）；
-3. 把 Markdown 渲染成 HTML（各平台编辑器都要求发渲染后的 HTML，不是 Markdown 源文）；
-4. 按平台鉴权发文：CSDN 走网关 HMAC-SHA256 签名（`x-ca-*`）+ Cookie；知乎走 Cookie 草稿接口三步流；百家号走 Cookie 浏览器自动化（Playwright 伴生脚本）或官方开发者凭证；腾讯云开发者社区走编辑器自身的 RPC `column/article`（纯 Cookie、零签名）；语雀走官方 OpenAPI v2（`X-Auth-Token`，Markdown 原样提交）；头条号模拟后台 `mp/agw` 接口（Cookie + `X-CSRFToken`）；SegmentFault 走 `/gateway` 网关（Cookie + 从写文章页实时取的 `Token`，双头同值）；
-5. 回显文章链接与 id（CSDN 支持更新用 `--update <id>`）。
+一条命令，五件事按顺序自动做完：
 
-主链路全部用仓颉标准库 + stdx 实现（HMAC / Base64 / HTTP / JSON），零第三方依赖；仅百家号 Cookie 通道需要一个 Playwright 伴生脚本。
+1. 读 Markdown + front-matter（title / tags / categories / desc / draft / origin_url）；
+2. **按平台转存图片**——外链图是文章最常见的慢性死法，发文前先把图落到不会失效的地方；
+3. 把 Markdown 渲染成 HTML（各平台编辑器要的是渲染结果，不是 Markdown 源文）；
+4. 按平台鉴权并提交（签名 / Cookie / Token），错误码原样回显，不替你猜；
+5. 回显 article id、草稿 id 与后续发布 / 更新命令，可直接复制。
+
+主链路全部用仓颉标准库 + stdx 实现（HMAC / Base64 / HTTP / JSON / TLS），零第三方依赖；仅百家号 Cookie 通道需要一个 Playwright 伴生脚本。
 
 ## 发文数据流
 
@@ -51,15 +90,11 @@ cspub publish 我的文章.md --live                # 直接发布
 
 > 源图 `docs/imgs/cspub-flow.svg`（可编辑）。第②步"图片自动转存"的防线细节见下文「图片转存」一节。
 
-## 为什么是仓颉
+## 为什么是仓颉（以及为什么自己写）
 
-这是个真实场景练手项目：华为仓颉的 stdx 恰好齐活一条「HTTP 客户端 + HMAC 签名 + JSON」链路，
-够写一个正经的 CLI 工具。实现过程的坑（HMAC 对账、TLS 信任、UTF-8 字节语义、struct 可变性）
-都记录在文末「实现要点」里，对写仓颉网络程序有直接参考价值。
+CSDN 的编辑器接口（`bizapi.csdn.net/blog-console-api/v3/mdeditor/saveArticle`）走**阿里云 API 网关风格的 HMAC-SHA256 签名**（`x-ca-*` 请求头），key/secret 烙在公开的前端 JS 里，账号凭据只需要你自己的登录 Cookie。于是整个工具就是：读文件 → 解析 front-matter → 渲染 HTML → 签名 → POST。
 
-## 为什么自己写
-
-CSDN 的编辑器接口（`bizapi.csdn.net/blog-console-api/v3/mdeditor/saveArticle`）走**阿里云 API 网关风格的 HMAC-SHA256 签名**（`x-ca-*` 请求头），key/secret 烙在 CSDN 公开的前端 JS 里；账号凭据只需要你自己的登录 Cookie。整个工具就是：读文件 → 解析 front-matter → Markdown 渲染成 HTML → 签名 → POST。仓颉 1.2.0 的 stdx（`stdx.crypto.digest` HMAC、`stdx.encoding.base64`、`stdx.net.http`）恰好齐活，不用任何外部依赖。
+而华为仓颉 1.2.0 的 stdx（`stdx.crypto.digest` 的 HMAC、`stdx.encoding.base64`、`stdx.net.http`、`stdx.net.tls`）恰好齐活这条链路，**一个外部依赖都不用**，静态编译成单文件。实现中的真实坑——签名对账、TLS 信任链、UTF-8 字节语义、JSON 类型分派——都沉淀在文末「实现要点」与 [`docs/开发文档与踩坑记录.md`](./docs/开发文档与踩坑记录.md)，对写仓颉网络程序有直接参考价值。
 
 ## 构建
 
@@ -141,14 +176,17 @@ echo "export CSPUB_ZHIHU_COOKIE='<Cookie 整串>'" >> ~/.bashrc
 ## 用法
 
 ```
-cspub check   <文章.md>            解析 front-matter + 渲染统计（不联网）
+cspub check   <文章.md> [--platform p]  解析 front-matter + 渲染统计；
+                                        带 --platform 时按该平台规则预检（标题字数 / 图片域名 / 必填项，不联网，不过返回 1）
 cspub html    <文章.md>            打印渲染后的 HTML（调试用）
 cspub imgs    <文章.md>            预演图片去向（rehost / skip / BLOCKED，不联网）
 cspub publish <文章.md> [--draft]  发草稿（默认）
                    [--live]        直接发布（覆盖 front-matter 的 draft: true）
-                   [--platform p]  目标平台，缺省 csdn（见顶部平台清单）
+                   [--platform p]  目标平台，缺省 csdn（见「支持的平台」）
                    [--update <id>] 原地更新指定文章（仅 CSDN）
+                   [--force]       图片转存部分失败时仍提交（默认中止，避免白烧发文额度）
                    [--insecure]    跳过 TLS 证书校验（TrustAll，仅诊断/自担风险）
+cspub tags    --platform tencent   查本账号已加入的专栏与可用标签（发腾讯云前先跑）
 cspub whoami  [平台名]             校验平台凭证配置
 cspub help
 ```
@@ -267,13 +305,18 @@ draft: true                # 缺省 true；publish 时 --live 可覆盖
   `git push origin main && git push github main`。注意本机 git 配置了
   `url.https://ghfast.top/https://github.com/.insteadof https://github.com/`，推 GitHub 实际走镜像加速，
   `git remote -v` 里显示的也是加速地址，属正常。
-- **发布流程**：`cjpm build` → 产物入 `dist/`（tar.gz + SHA256SUMS）→ 打 tag（`v0.1.0` 格式）→ 基于 tag 发 release 并附产物。详见 `docs/发布与版本维护.md`。
+- **发布流程**：`cjpm build` → 产物入 `dist/`（`cspub-v<版本>-linux-x64[.tar.gz]`，Windows 侧 `-windows-x64.exe` / `-selfcontained.zip`）→ `SHA256SUMS` 逐项 `sha256sum -c` 通过 → 打 tag（`v0.3.1` 格式）→ 基于 tag 发 release 并附产物。详见 [`docs/发布与版本维护.md`](./docs/发布与版本维护.md)。
+- **当前版本**：`0.3.1`——十平台通道 + 平台预检（`check --platform`）、转存失败门禁（`--force`）、头条图片重传、AtomGit 备用下载端点。产物见 [`dist/`](./dist) 与 [Releases](https://github.com/yangyongzhen/cspub/releases)。
 - **开发规范**：见 [AGENTS.md](./AGENTS.md)——变更交付门禁、代码组织原则、踩坑沉淀与文档规范。
 
 ## 已知限制
 
 - 表格 / 脚注 / 任务列表等扩展 Markdown 不渲染（原样进段落）；
 - 更新文章只支持 `--update <id>`（id 在首次发布成功后回显）；
+- **头条号没有草稿通道**：`save` 非 0 即「提交并发布」，`save=0`（真存草稿）需要浏览器风控的一次性签名
+  （`msToken` / `a_bogus` / `tt-anti-token`），纯 HTTP 不可复现。所以 `--platform toutiao --draft` 会**拒绝提交**并打印原因，
+  不会静默改成公开发布；要发头条请显式用 `--live`；
+- **百家号 Cookie 通道要 playwright**：宿主机需 `pip install playwright && playwright install chromium`（官方 token 通道不需要）；
 - **开源中国公开可见性**：发布接口回了博客 id 也不代表立刻公开（新号/首篇走人工审核），公开页可能仍是
   「找不到您访问的页面」；判可见性只能靠浏览器渲染，`curl` 该路由一律 200 无信息量；
 - **Windows 侧**：`./scripts/winbuild.sh` 交叉编译产出 exe（8.2 MB，mingw strip 后）+ 自包含 zip（exe + libboundscheck / libcangjie-runtime / libcrypto-3-x64 / libssl-3-x64 四 DLL，解压同目录即用）；发文链路未在真机 Windows 实测；
