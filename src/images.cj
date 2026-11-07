@@ -250,8 +250,40 @@ func scanLineImages(line: String, base: Int64, out: ArrayList<ImgRef>): Unit {
 
 // ── 下载 / 上传 ──
 
-/** 下载图片（拒 30x：重定向可能把请求带到没检查过的主机；限 12 MiB） */
-public func downloadImage(url: String): Array<Byte> {
+/** raw.gitcode.com 直链的 api.gitcode.com 等价端点（纯函数，单测覆盖）。
+ *
+ * **实测**：本机访问 `raw.gitcode.com` 会被 CloudWAF 拦成 `HTTP 418`（3223 字节挑战页），
+ * 同一张图换 api 端点 `HTTP 200 / 286732 bytes` —— 转存全失败的根因常常是这个，不是图床挂了。
+ * 形如 `https://raw.gitcode.com/u/r/raw/main/a/b.png`
+ *  → `https://api.gitcode.com/api/v5/repos/u/r/raw/a/b.png?ref=main`
+ * 非 raw.gitcode.com 或段数不够时返回空串（表示没有备用端点，别造坏 URL）。 */
+public func atomgitApiFallbackUrl(url: String): String {
+    let parts = url.split("/")
+    // ["https:", "", "raw.gitcode.com", user, repo, "raw", branch, path...]
+    if (parts.size < 8) {
+        return ""
+    }
+    if (parts[2] != "raw.gitcode.com" || parts[5] != "raw") {
+        return ""
+    }
+    var path = ""
+    var i: Int64 = 7
+    while (i < parts.size) {
+        if (path.size > 0) {
+            path = path + "/"
+        }
+        path = path + parts[i]
+        i++
+    }
+    if (path.size == 0) {
+        return ""
+    }
+    return "https://api.gitcode.com/api/v5/repos/${parts[3]}/${parts[4]}/raw/${path}?ref=${parts[6]}"
+}
+
+/** 单次下载尝试：**不抛异常**，失败原因放第三个返回值——主/备端点要靠返回值串起来，
+ * 用异常串会让「备用也失败」这类错误信息丢掉原始原因。 */
+func downloadImageTry(url: String): (Bool, Array<Byte>, String) {
     var cb = ClientBuilder()
         .autoRedirect(false)
         .readTimeout(Duration.second * 30)
@@ -261,16 +293,18 @@ public func downloadImage(url: String): Array<Byte> {
     }
     let client = cb.build()
     let out = ArrayListByte()
+    let empty = Array<Byte>(0, repeat: 0)
+    var errMsg = ""
     try {
         let resp = client.send(HttpRequestBuilder().url(url).get().header("User-Agent", UA).build())
         let status = Int64(resp.status)
         if (status == 301 || status == 302 || status == 303 || status == 307 || status == 308) {
             resp.close()
-            throw PubError("图片地址重定向被拒绝（HTTP ${status}）")
+            return (false, empty, "图片地址重定向被拒绝（HTTP ${status}）")
         }
         if (status != 200) {
             resp.close()
-            throw PubError("图片下载 HTTP ${status}")
+            return (false, empty, "图片下载 HTTP ${status}")
         }
         let chunk = Array<Byte>(16384, repeat: 0)
         var total: Int64 = 0
@@ -282,7 +316,7 @@ public func downloadImage(url: String): Array<Byte> {
             total += n
             if (total > OBS_MAX_IMG_BYTES) {
                 resp.close()
-                throw PubError("图片超过 ${OBS_MAX_IMG_BYTES} 字节上限")
+                return (false, empty, "图片超过 ${OBS_MAX_IMG_BYTES} 字节上限")
             }
             var i: Int64 = 0
             while (i < n) {
@@ -291,13 +325,38 @@ public func downloadImage(url: String): Array<Byte> {
             }
         }
         resp.close()
+    } catch (e: Exception) {
+        errMsg = e.message
     } finally {
         client.close()
     }
-    if (out.inner.size == 0) {
-        throw PubError("图片 0 字节（典型防盗链形状）")
+    if (errMsg.size > 0) {
+        return (false, empty, errMsg)
     }
-    return out.toArray()
+    if (out.inner.size == 0) {
+        return (false, empty, "图片 0 字节（典型防盗链形状）")
+    }
+    return (true, out.toArray(), "")
+}
+
+/** 下载图片（拒 30x：重定向可能把请求带到没检查过的主机；限 12 MiB）。
+ * 主端点失败且是 raw.gitcode.com 直链时，自动换 api.gitcode.com 重试一次——
+ * 见 atomgitApiFallbackUrl 的实测说明。备用也失败则抛**备用端点的**原因并保留主端点信息。 */
+public func downloadImage(url: String): Array<Byte> {
+    let (ok, bytes, err) = downloadImageTry(url)
+    if (ok) {
+        return bytes
+    }
+    let fb = atomgitApiFallbackUrl(url)
+    if (fb.size == 0) {
+        throw PubError(err)
+    }
+    println("  [图片下载] 主端点失败（${err}），改走备用端点 api.gitcode.com")
+    let (ok2, bytes2, err2) = downloadImageTry(fb)
+    if (ok2) {
+        return bytes2
+    }
+    throw PubError("${err2}（主端点：${err}）")
 }
 
 /** 图片扩展名（URL 尾段推断；不在白名单按 png——OBS 侧只影响 Content-Type 与文件名） */
@@ -631,6 +690,25 @@ public func imagesRemainGate(platform: String, md: String, strict: Bool): Bool {
         return true
     }
     return false
+}
+
+/** 图片转存「部分失败」门禁（纯函数，单测覆盖）：头条这类平台只要有一张图不在自家 CDN
+ * 就整篇拒稿（7115），明知必败还提交等于白烧一次每日发文额度（头条约 4 篇/天）。
+ * 默认中止，`--force` 才继续。返回 true＝调用方应中止。 */
+public func rehostFailGate(platform: String, failCount: Int64, force: Bool): Bool {
+    if (failCount <= 0) {
+        return false
+    }
+    println("✗ 图片转存未全部成功：${failCount} 张失败（${platform}）")
+    println("  ${platform} 对非本平台域名的图会整篇拒稿（头条 7115），提交很可能白费一次发文额度")
+    if (force) {
+        println("  已按 --force 继续提交——若被拒稿，先查登录态与图床连通性，别往文章上找原因")
+        return false
+    }
+    println("  选择：① 直接重跑（图床上传带重传，瞬时失败常能过）")
+    println("        ② 删掉或替换这几张图后重发")
+    println("        ③ 明知有风险仍要提交：加 --force")
+    return true
 }
 
 /** 把 Markdown 里的站外图全部转存到 CSDN 图床并回写 URL（从后往前替换，偏移不挪位）。

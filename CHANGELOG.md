@@ -2,6 +2,65 @@
 
 cspub 版本变更记录。版本号规则沿用 cjh：重大更新递增中间位，小更新递增末位；版本号单一真相在 `cjpm.toml` 的 `version` 字段。每条变更须带验证证据（实测输出、错误码、转存结果），不写没有证据的条目。
 
+## [0.3.1] - 2026-11-07
+
+按「十平台发文实战复盘」的 13 项问题清单修掉前四项：把「发一次错一次」的失败提前到本地，把注定失败的提交挡在发文额度之外。
+
+### 新增
+
+- **头条图床上传重传**（`uploadToutiaoImage` / `uploadToutiaoImageOnce` / `toutiaoUploadRetryable`）：实战里一轮 6 张图，
+  每次失败的图集合都不一样（1/6、3/6、2/3 成功不定），说明 1050「图片上传失败」是瞬时抖动而非稳定拒绝。
+  现在单张最多重传 2 次（`TOUTIAO_UPLOAD_MAX_ATTEMPTS`），每次间隔 1s；可重试判据单列为纯函数：
+  `code` 命中 `1050`/`5009`、HTTP 5xx/429/0、以及「HTTP 200 但响应不可解析」都算瞬时；
+  `1000`/`100004`/`100005`（未登录）与 `7115`（正文图链非法）立即失败不重传，别把时间花在必然失败的重跑上。
+  顺带把成功判据从只认 `state == "SUCCESS"` 改成 `code == "0"` 或 `state == "SUCCESS"`——实测响应是**扁平结构**，
+  新版成功时 `state` 常为空串，只认 state 会把成功判成失败。
+- **图片转存部分失败即中止**（`rehostFailGate`）：`publish` 遇到 `fail > 0` 默认中止并打印三条出路，
+  `--force` 才继续提交。头条对非自家域名的图片整篇拒稿（7115），明知必败还提交等于白烧一次每日额度
+  （头条约 4 篇/天）。此前是「打条警告照发」。
+- **`check --platform <p>` 平台预检**（`src/platform_rules.cj`）：不联网、纯本地规则，把服务端硬约束提前。
+  头条标题 5~30 字 / 有图即提示必须全部进头条 CDN（失败即 7115）；百家号标题 8-40 字符、正文 ≤20000 字符、
+  `origin_url` 必填、**无本地图则卡封面**（实测「请添加封面」来源）；腾讯云 `--live` 正文 ≥140 字、`tagIds` 必填
+  （空回 -9993）、未配专栏提示回落 149 有 300031 风险。任一条不通过返回 1，可直接串进 CI。
+- **`cspub tags --platform tencent`**（`cmdTencentTags`）：调 `FetchJoinedColumnList` 列出**本账号已加入**的专栏，
+  再对前 5 个专栏调 `FetchColumnTags` 打印可用标签（每栏最多展示 12 个），末尾直接给出可复制的
+  `export CSPUB_TENCENT_CLASSIFY_IDS=…` / `CSPUB_TENCENT_TAG_IDS=…`。此前 help 里写的是别的账号的 id
+  （`149`/`10757,17183`），照抄必撞 `300031`/`-9993`。新增 `tencentColumnRpcUrl`（namespace 是 `column/column`，
+  不是发文的 `column/article`）、`tencentRespCode`、`tencentItemArray` 与 `parseTencentColumns`/`parseTencentTags`
+  两个防御式解析器（兼容 `columnId|classifyId|id`、`list|items|columns|tags|result|records` 等包法）。
+
+- **图片下载备用端点**（`atomgitApiFallbackUrl` / `downloadImageTry` / `downloadImage`）：真机验证时腾讯云转存
+  **6/6 全失败**，查下来不是图床问题——本机访问 `raw.gitcode.com` 被 CloudWAF 拦成 `HTTP 418`（3223 字节挑战页），
+  同一张图换 `api.gitcode.com` 端点 `HTTP 200 / 286732 bytes`。现在主端点失败且是 raw 直链时，自动换算到
+  `https://api.gitcode.com/api/v5/repos/{u}/{r}/raw/{path}?ref={branch}` 重试一次（下载改为不抛异常的
+  `downloadImageTry` 返回值串联，失败信息保留主端点原因）。腾讯云那条路是**服务端抓链**（`SaveHttpImageCommon`
+  只收 url，不走本机下载），所以在交给它之前就把 URL 换成 api 端点——**实测转存从 `成功 0，失败 6` 变成
+  `成功 6，失败 0`**。非 raw 直链（其它域名/段数不够/第 6 段不是 `raw`）返回空串，不造坏 URL。
+
+### 变更
+
+- `--force` 进入 `publish` 参数表；`check` 由 `cmdCheck(path)` 改为 `cmdCheck(args)` 以吃 `--platform`。
+- help 版本行同步 0.3.1，用法区新增 `check --platform`、`--force`、`tags` 三行。
+
+### 构建与测试
+
+- `cjpm build` 零警告：`cjpm build 2>&1 | grep -c 'warning:'` → `0`（两轮均 0）。
+- `cjpm test` 全绿：`Summary: TOTAL: 91 / PASSED: 91, SKIPPED: 0, ERROR: 0, FAILED: 0`。
+  本轮新增 7 个用例：`toutiaoUploadRetryableTest`、`tencentColumnRpcUrlTest`、`tencentRespCodeTest`、
+  `tencentColumnParseTest`、`tencentTagParseTest`、`platformCheckToutiaoTest` / `platformCheckTencentTest` /
+  `platformCheckBaijiahaoTest` / `rehostFailGateTest`、`atomgitFallbackUrlTest`。
+
+### 真机验证（2026-11-07，v0.3.1 二进制）
+
+| 验证项 | 命令 | 实测结果 |
+| --- | --- | --- |
+| 头条预检 | `check docs/cjh内嵌接入-发布稿.md --platform toutiao` | `exit 1`，命中「标题字数：当前 44 字，头条要求 5~30 字」+「图片域名：正文 6 张图…7115」 |
+| 百家号预检 | `… --platform baijiahao` | `exit 1`，命中标题 8-40 字符、`origin_url` 必填、**封面**（纯外链图不触发放封面） |
+| 腾讯云预检 | `… --platform tencent` | `exit 1`，命中标签必填（-9993）与专栏回落 149 的 300031 风险 |
+| 专栏/标签查询 | `tags --platform tencent` | `uin 100009199133`；已加入 1 个专栏 `[88542] 独行猫a的沉淀积累总结`；该专栏 **177 个标签**，展示前 12 个并给出 `export` 建议 |
+| 图片预演 | `imgs docs/cjh内嵌接入-发布稿.md` | 列出 6 张待转存图（arch-diagram / embed-arch / web-ui / cjnote-ai-panel / ai-chat-agent / embed-brain） |
+| 腾讯云草稿留痕 | `publish … --platform tencent --draft`（`CSPUB_TENCENT_CLASSIFY_IDS=88542`、`TAG_IDS=10663,10308`） | 草稿 `draftId 342313`，编辑地址 `…/write?draftId=342313`；图片转存 `成功 6，失败 0`（对照：备用端点生效前 342310/342312 两次均 `成功 0，失败 6`） |
+
 ## [Unreleased]
 
 新增四个平台通道：腾讯云开发者社区（纯 Cookie）、语雀（官方 OpenAPI v2 + Token）、头条号（模拟后台 mp/agw 接口）、SegmentFault 思否（`/gateway` 网关 + 页面取 Token）。其中**腾讯云已端到端跑通草稿与正式发布**（草稿 `draftId 341903`，正式文章 `articleId 2777717`，均服务端核验）；语雀 / SegmentFault 两家是「实现 + 单测」交付，**端到端发布待凭证**；头条号已端到端跑通（见「未验证」节）。

@@ -305,3 +305,62 @@ func tencentPublishPayloadFieldsTest(): Unit {
         case _ => @Assert(false, true)
     }
 }
+
+@Test
+func tencentColumnRpcUrlTest(): Unit {
+    // 专栏/标签的 namespace 是 column/column，挂到 column/article 下回 501
+    @Assert(tencentColumnRpcUrl("FetchJoinedColumnList", "100009199133"),
+        "https://cloud.tencent.com/developer/services/ajax/column/column?action=FetchJoinedColumnList&uin=100009199133")
+    // uin 缺失时不能拼出 uin= 空值
+    @Assert(tencentColumnRpcUrl("FetchJoinedColumnList", ""),
+        "https://cloud.tencent.com/developer/services/ajax/column/column?action=FetchJoinedColumnList")
+    // FetchColumnTags 也走同一个 namespace
+    @Assert(tencentColumnRpcUrl("FetchColumnTags", "1").contains("column/column?action=FetchColumnTags"), true)
+}
+
+@Test
+func tencentRespCodeTest(): Unit {
+    // code 是 JSON **数字**：按 Kind 取才拿得到 "0"（只认字符串的 jsonStr 得空串）
+    @Assert(tencentRespCode("{\"code\":0,\"data\":{}}"), "0")
+    @Assert(tencentRespCode("{\"code\":300031}"), "300031")
+    @Assert(tencentRespCode("{\"code\":-9993}"), "-9993")
+    // 非对象或不可解析 → 空串（调用方按失败处理）
+    @Assert(tencentRespCode("[1,2]"), "")
+    @Assert(tencentRespCode("not json"), "")
+}
+
+@Test
+func tencentColumnParseTest(): Unit {
+    // data 直接是数组
+    let flat = "{\"code\":0,\"data\":[{\"columnId\":88542,\"columnName\":\"开源技术\"},{\"columnId\":149,\"columnName\":\"技术\"}]}"
+    let cols = parseTencentColumns(flat)
+    @Assert(cols.size, 2)
+    @Assert(cols[0][0], "88542")
+    @Assert(cols[0][1], "开源技术")
+    // data 包一层 list，字段名换成 id/name 也要认
+    let nested = "{\"code\":0,\"data\":{\"list\":[{\"id\":88542,\"name\":\"备份专栏\"}]}}"
+    let cols2 = parseTencentColumns(nested)
+    @Assert(cols2.size, 1)
+    @Assert(cols2[0][0], "88542")
+    @Assert(cols2[0][1], "备份专栏")
+    // 缺 id 的条目直接跳过，不产出空 id 的假专栏
+    @Assert(parseTencentColumns("{\"code\":0,\"data\":[{\"columnName\":\"没有 id\"}]}").size, 0)
+    // 空/坏响应不抛异常
+    @Assert(parseTencentColumns("").size, 0)
+}
+
+@Test
+func tencentTagParseTest(): Unit {
+    let t = "{\"code\":0,\"data\":[{\"tagId\":10663,\"tagName\":\"编程算法\"},{\"tagId\":10308,\"tagName\":\"linux\"}]}"
+    let tags = parseTencentTags(t)
+    @Assert(tags.size, 2)
+    @Assert(tags[0][0], "10663")
+    @Assert(tags[0][1], "编程算法")
+    @Assert(tags[1][1], "linux")
+    // tagId 缺失跳过
+    @Assert(parseTencentTags("{\"code\":0,\"data\":[{\"tagName\":\"无 id\"}]}").size, 0)
+    // 条目数组提取：数组与容器两种形状都要能取到
+    @Assert(tencentItemArray("{\"data\":[1,2,3]}").size, 3)
+    @Assert(tencentItemArray("{\"data\":{\"tags\":[1]}}").size, 1)
+    @Assert(tencentItemArray("[]").size, 0)
+}

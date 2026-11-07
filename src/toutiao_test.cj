@@ -169,3 +169,27 @@ func toutiaoUrlTest(): Unit {
     @Assert(toutiaoArticleUrl("7031386221209256455"),
         "https://www.toutiao.com/article/7031386221209256455/")
 }
+
+@Test
+func toutiaoUploadRetryableTest(): Unit {
+    // 1050「图片上传失败」：实测同一张图重传结果会变（一轮 6 张里失败集合每次不同）→ 必须重传
+    @Assert(toutiaoUploadRetryable("1050", 200), true)
+    @Assert(toutiaoUploadRetryable("5009", 200), true)
+    // 未登录类码：重传多少次都一样，别浪费时间和额度
+    @Assert(toutiaoUploadRetryable("1000", 200), false)
+    @Assert(toutiaoUploadRetryable("100004", 200), false)
+    @Assert(toutiaoUploadRetryable("100005", 200), false)
+    // 7115 是正文图片 uri 非法（上游图链问题），不是这次上传的错
+    @Assert(toutiaoUploadRetryable("7115", 200), false)
+    // 成功不需要重传
+    @Assert(toutiaoUploadRetryable("0", 200), false)
+    @Assert(toutiaoUploadRetryable("SUCCESS", 200), false)
+    // HTTP 层瞬时错误
+    @Assert(toutiaoUploadRetryable("", 502), true)
+    @Assert(toutiaoUploadRetryable("", 429), true)
+    @Assert(toutiaoUploadRetryable("", 0), true)
+    // code 空且 HTTP 200：响应体不可解析，按瞬时处理（重传一次成本很低）
+    @Assert(toutiaoUploadRetryable("", 200), true)
+    // 重传上限必须 >1，否则这个机制等于不存在
+    @Assert(TOUTIAO_UPLOAD_MAX_ATTEMPTS >= 2, true)
+}

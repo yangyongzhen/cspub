@@ -34,11 +34,14 @@ main(args: Array<String>): Int64 {
         usage()
         return 0
     }
+    if (cmd == "tags") {
+        return cmdTags(args)
+    }
     if (cmd == "whoami") {
         return cmdWhoami(args)
     }
     if (cmd == "check" && args.size >= 2) {
-        return cmdCheck(args[1])
+        return cmdCheck(args)
     }
     if (cmd == "html" && args.size >= 2) {
         // 调试入口：只打印渲染后的 HTML（publish 发给 CSDN 的 content 就是它）
@@ -121,14 +124,16 @@ main(args: Array<String>): Int64 {
 
 func usage(): Unit {
     // 版本号唯一真相在 cjpm.toml 的 version，此处仅回显，改动时须同步
-    println("cspub v0.3.0 — 多平台自动发文 CLI（仓颉实现）：csdn / zhihu / baijiahao / cnblogs / juejin / oschina / tencent / yuque / toutiao / segmentfault")
+    println("cspub v0.3.1 — 多平台自动发文 CLI（仓颉实现）：csdn / zhihu / baijiahao / cnblogs / juejin / oschina / tencent / yuque / toutiao / segmentfault")
     println("")
     println("用法:")
-    println("  cspub check   <文章.md>            解析 front-matter + 渲染统计（不联网）")
+    println("  cspub check   <文章.md> [--platform p]  解析 front-matter + 渲染统计；带 --platform 时按该平台规则预检（不联网）")
     println("  cspub publish <文章.md> [--draft]  发草稿（默认）")
     println("                      [--live]       直接发布（覆盖 front-matter 的 draft: true）")
     println("                      [--update id]  原地更新指定文章（仅 csdn）")
+    println("                      [--force]      图片转存部分失败时仍提交（默认中止，避免白烧发文额度）")
     println("                      [--platform p] csdn（默认）/ zhihu / baijiahao / cnblogs / juejin / oschina / tencent / yuque / toutiao / segmentfault")
+    println("  cspub tags --platform tencent      查本账号已加入的专栏与可用标签（发腾讯云前先跑这个）")
     println("  cspub whoami [platform]            校验平台凭证配置（不发网络请求）")
     println("  cspub help                         本帮助")
     println("")
@@ -219,6 +224,35 @@ func loadTencentCreds(): (String, String, String) {
         println("  注意：skey 里的 * 原样保留，不要做 URL 编码")
     }
     return (cookie, classify, tags)
+}
+
+/** 命令：tags——查平台侧可选的专栏/标签（目前只有腾讯云需要现查 id）。
+ * 其它平台的 tags/categories 按名字匹配，不用查 id。 */
+func cmdTags(args: Array<String>): Int64 {
+    var platform = "tencent"
+    var insecure = false
+    var i: Int64 = 1
+    while (i < args.size) {
+        if (args[i] == "--platform" && i + 1 < args.size) {
+            platform = args[i + 1]
+            i++
+        } else if (args[i] == "--insecure") {
+            insecure = true
+        } else {
+            println("未知参数：${args[i]}（tags 只认 --platform / --insecure）")
+            return 1
+        }
+        i++
+    }
+    if (platform != "tencent") {
+        println("tags 目前只支持 tencent：其它平台的 tags/categories 按**名字**匹配，不用查 id")
+        return 1
+    }
+    let (cookie, _, _) = loadTencentCreds()
+    if (cookie.size == 0) {
+        return 1
+    }
+    return cmdTencentTags(cookie, insecure)
 }
 
 /** 载入语雀凭证：Token + namespace + 可选公开性。两者都是必填，缺哪个就点名哪个。 */
@@ -485,8 +519,23 @@ func cmdWhoami(args: Array<String>): Int64 {
     return 0
 }
 
-/** 命令：check——解析 front-matter + 渲染统计，不联网 */
-func cmdCheck(path: String): Int64 {
+/** 命令：check——解析 front-matter + 渲染统计，不联网。
+ * 带 `--platform p` 时追加该平台的本地规则预检（标题字数/正文字数/标签/封面/图片域名），
+ * 有任一条不通过就返回 1——把「发一次错一次」提前到本地。 */
+func cmdCheck(args: Array<String>): Int64 {
+    let path = args[1]
+    var platform = ""
+    var i: Int64 = 2
+    while (i < args.size) {
+        if (args[i] == "--platform" && i + 1 < args.size) {
+            platform = args[i + 1]
+            i++
+        } else {
+            println("未知参数：${args[i]}（check 只认 --platform）")
+            return 1
+        }
+        i++
+    }
     let text = loadArticleFile(path)
     if (text.size == 0) {
         return 1
@@ -504,6 +553,21 @@ func cmdCheck(path: String): Int64 {
         println("⚠ front-matter 缺 title（CSDN 必填）")
         return 1
     }
+    if (platform.size == 0) {
+        println("OK")
+        return 0
+    }
+    // 纯文本字数与腾讯云的 plain 同源（mdToDraftRoot 的第二个返回值），别自己再写一套统计
+    let (_, plain) = mdToDraftRoot(a.body)
+    let issues = platformCheckIssues(platform, a.title, utf8CharCount(a.body),
+        utf8CharCount(plain), a.originUrl,
+        loadConfigString("CSPUB_TENCENT_TAG_IDS", "tencentTagIds"),
+        loadConfigString("CSPUB_TENCENT_CLASSIFY_IDS", "tencentClassifyIds"),
+        Int64(collectImgSrcs(html).size), localImageCount(a.body))
+    printPlatformIssues(platform, issues)
+    if (platformCheckFailed(issues)) {
+        return 1
+    }
     println("OK")
     return 0
 }
@@ -514,6 +578,7 @@ func cmdPublish(args: Array<String>, startIdx: Int64): Int64 {
     var liveOverride = false
     var updateId = ""
     var insecure = false
+    var force = false
     var platform = "csdn"
     var i = startIdx
     while (i < args.size) {
@@ -523,6 +588,8 @@ func cmdPublish(args: Array<String>, startIdx: Int64): Int64 {
             liveOverride = true
         } else if (args[i] == "--insecure") {
             insecure = true
+        } else if (args[i] == "--force") {
+            force = true
         } else if (args[i] == "--platform" && i + 1 < args.size) {
             platform = args[i + 1]
             i++
@@ -665,7 +732,7 @@ func cmdPublish(args: Array<String>, startIdx: Int64): Int64 {
         let tMode = if (publishNow) { "提交发布（save=1）" } else { "未提交（头条无草稿通道）" }
         let (tToken, tRepo, tBranch, tDir) = loadAtomgitImageConf()
         println("发布到头条号（${tMode}）…")
-        return publishToToutiao(tCookie, tCsrf, a, publishNow, insecure, tToken, tRepo, tBranch, tDir)
+        return publishToToutiao(tCookie, tCsrf, a, publishNow, insecure, tToken, tRepo, tBranch, tDir, force)
     }
     if (platform == "segmentfault") {
         let sfCookie = loadSegmentfaultCreds()

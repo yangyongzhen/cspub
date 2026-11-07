@@ -241,7 +241,44 @@ public func rewriteHtmlImgs(html: String, map: HashMap<String, String>): String 
     return acc.toString()
 }
 
-/** 上传一张图到头条 CDN：POST upload_picture（multipart，字段名 upfile）。
+/** 头条图床上传的最大尝试次数：同一张图重传会在 code 0 / 1050 之间摆动（2026-11-07 实测，
+ * 一轮 6 张图里失败的集合每次都不一样），3 次能把「随机整体失败」压到可接受；再多就是替平台扛故障。 */
+public const TOUTIAO_UPLOAD_MAX_ATTEMPTS: Int64 = 3
+
+/** 上传失败是否值得重传（纯函数，单测覆盖）。
+ * - `1050`「图片上传失败」/`5009`：同一张图重传结果会变，属瞬时风控或后端抖动 → 重传；
+ * - `1000` / `100004` / `100005`：未登录，重传多少次都一样 → 不重传；
+ * - `7115`：正文图片 uri 非法，问题在上游图链而不是这次上传 → 不重传；
+ * - HTTP 0（连接失败）/429（限流）/5xx：网络层瞬时错误 → 重传。 */
+public func toutiaoUploadRetryable(code: String, httpStatus: Int64): Bool {
+    let c = trimAscii(code)
+    if (c == "0" || c == "SUCCESS") {
+        return false
+    }
+    if (c == "1050" || c == "5009") {
+        return true
+    }
+    if (c == "1000" || c == "100004" || c == "100005" || c == "7115") {
+        return false
+    }
+    if (httpStatus == 0 || httpStatus == 429 || httpStatus >= 500) {
+        return true
+    }
+    // 响应体不可解析（code 空）：当瞬时错误处理，重传一次的成本很低
+    return c.size == 0
+}
+
+/** 第 n 次重试前的等待（线性退避 1s/2s/3s）。不用 `Duration * Int64`：
+ * core 里该运算符的可见性没在本机确认过，逐次 sleep 零风险且总等待上限可控。 */
+func toutiaoRetryPause(attempt: Int64): Unit {
+    var i: Int64 = 1
+    while (i <= attempt) {
+        sleep(Duration.second)
+        i++
+    }
+}
+
+/** 上传一张图到头条 CDN（带重传）：POST upload_picture（multipart，字段名 upfile）。
  * 返回 (web_uri, 可展示链接)；失败返回 ("", "")。
  * 失败不抛异常：调用方要能统计「几张传失败」再决定要不要拦发布——头条会整篇拒稿，
  * 提前说清楚比抛一个栈更接近用户的决策现场。 */
@@ -249,6 +286,33 @@ public func uploadToutiaoImage(cookie: String, csrf: String, data: Array<Byte>, 
     insecure: Bool): (String, String) {
     if (data.size == 0) {
         return ("", "")
+    }
+    var attempt: Int64 = 1
+    while (attempt <= TOUTIAO_UPLOAD_MAX_ATTEMPTS) {
+        let (uri, pubUrl, code, status) = uploadToutiaoImageOnce(cookie, csrf, data, ext, insecure)
+        if (uri.size > 0) {
+            return (uri, pubUrl)
+        }
+        let last = attempt == TOUTIAO_UPLOAD_MAX_ATTEMPTS
+        if (last || !toutiaoUploadRetryable(code, status)) {
+            if (attempt > 1) {
+                println("  ⚠ 头条图床上传最终失败（code ${code}，已试 ${attempt} 次）")
+            }
+            return ("", "")
+        }
+        println("  头条图床上传瞬时失败（code ${code}），${attempt} 秒后重试…")
+        toutiaoRetryPause(attempt)
+        attempt++
+    }
+    return ("", "")
+}
+
+/** 单次上传尝试：返回 (web_uri, 可展示链接, 响应 code, HTTP 状态)。
+ * code/status 一起回给重传判定——只看 uri 是否为空分不清「未登录」和「瞬时抖动」。 */
+public func uploadToutiaoImageOnce(cookie: String, csrf: String, data: Array<Byte>, ext: String,
+    insecure: Bool): (String, String, String, Int64) {
+    if (data.size == 0) {
+        return ("", "", "", 0)
     }
     let sfx = if (ext.size > 0) { ext } else { "png" }
     let boundary = "----cspub" + randomHex(20)
@@ -274,7 +338,7 @@ public func uploadToutiaoImage(cookie: String, csrf: String, data: Array<Byte>, 
     let r = execRequest(req, insecure)
     dbg("toutiao upload_picture HTTP ${r.status}：${r.text}")
     if (r.status != 200) {
-        return ("", "")
+        return ("", "", "", r.status)
     }
     let root = try {
         JsonValue.fromStr(r.text)
@@ -306,17 +370,18 @@ public func uploadToutiaoImage(cookie: String, csrf: String, data: Array<Byte>, 
     }
     // 成功判据不能只看 state：这份响应是**扁平结构**（无 data 包裹），新版接口成功时
     // `state` 常为空串（"SUCCESS" 是旧版 ueditor 协议的形状），拿它判会把成功当失败。
-    let codeOk = jsonScalar(root, "code") == "0"
+    let codeStr = jsonScalar(root, "code")
+    let codeOk = codeStr == "0"
     if (!codeOk && state != "SUCCESS") {
-        return ("", "")
+        return ("", "", codeStr, r.status)
     }
     if (uri.size == 0) {
-        return ("", "")
+        return ("", "", codeStr, r.status)
     }
     if (pubUrl.size == 0) {
         pubUrl = uri
     }
-    return (uri, pubUrl)
+    return (uri, pubUrl, codeStr, r.status)
 }
 
 /** 把正文里**所有**图片转存到头条 CDN 并回写 web_uri（外链也转，头条不认外链）。
@@ -388,7 +453,7 @@ public func rehostToutiaoImages(cookie: String, csrf: String, html: String,
  * 图片与别的平台相反：**外链也要转存**，否则整篇被拒 7115。 */
 public func publishToToutiao(cookie: String, csrf: String, a: Article, publishNow: Bool,
     insecure: Bool, atomgitToken: String, atomgitRepo: String, atomgitBranch: String,
-    atomgitDir: String): Int64 {
+    atomgitDir: String, force: Bool): Int64 {
 
     // ⓪ 没有草稿通道：默认档必须**什么都不发**，把选择权交回用户
     if (!publishNow) {
@@ -422,11 +487,11 @@ public func publishToToutiao(cookie: String, csrf: String, a: Article, publishNo
 
     let html = mdToHtml(body)
     let (html2, ok2, fail2) = rehostToutiaoImages(cookie, csrf, html, insecure)
-    if (fail2 > 0) {
-        println("警告：${fail2} 张图未能转存到头条 CDN。头条对非头条域名的图片会整篇拒稿（7115 图片uri非法），")
-        println("      这次提交很可能被拒——建议先用 cookie-export 确认登录态、或删掉这几张图再发。")
-    }
     let _ = ok2
+    // 有图没进头条 CDN 就是必败稿（7115），默认中止，别把每日额度花在一次注定被拒的提交上
+    if (rehostFailGate("toutiao", fail2, force)) {
+        return 1
+    }
 
     // 唯一可用通道：save=1（save=0 恒 7050，见函数头注释）
     let saveFlag: Int64 = 1

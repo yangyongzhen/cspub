@@ -517,3 +517,115 @@ func companionScriptPathTest(): Unit {
     @Assert(foundRepoRoot, true)
     @Assert(c2.size > 3, true)
 }
+
+@Test
+func platformCheckToutiaoTest(): Unit {
+    // 头条 5~30 字：4 字不符（编辑器存不进的硬区间）
+    let bad = platformCheckIssues("toutiao", "短标题", 100, 100, "", "", "", 0, 0)
+    @Assert(bad.size, 1)
+    @Assert(bad[0].label, "标题字数")
+    // 合规标题 + 无图 → 本地规则全过
+    @Assert(platformCheckIssues("toutiao", "一个六字标题名", 100, 100, "", "", "", 0, 0).size, 0)
+    // 有图就提示「必须全部进头条 CDN」
+    let withImg = platformCheckIssues("toutiao", "一个六字标题名", 100, 100, "", "", "", 3, 0)
+    @Assert(withImg.size, 1)
+    @Assert(withImg[0].label, "图片域名")
+    // 超 30 字同样报（44 字标题实测就是这么被拦下的）
+    @Assert(platformCheckIssues("toutiao", "一个字一个字一个字一个字一个字一个字一个字一个字一个字一个字一个字",
+        100, 100, "", "", "", 0, 0).size, 1)
+}
+
+@Test
+func platformCheckTencentTest(): Unit {
+    // 正文不足 140 字 + 标签空 + 未配专栏（回落默认 149）→ 三条
+    let iss = platformCheckIssues("tencent", "标题", 50, 50, "", "", "", 0, 0)
+    @Assert(iss.size, 3)
+    var sawTag = false
+    var sawChars = false
+    var sawColumn = false
+    for (it in iss) {
+        if (it.label == "标签") {
+            sawTag = true
+        }
+        if (it.label == "正文字数") {
+            sawChars = true
+        }
+        if (it.label == "专栏") {
+            sawColumn = true
+        }
+    }
+    @Assert(sawTag, true)
+    @Assert(sawChars, true)
+    @Assert(sawColumn, true)
+    // 配了标签、正文够长、专栏非默认 → 通过
+    @Assert(platformCheckIssues("tencent", "标题", 200, 200, "", "10663,10308", "88542", 0, 0).size, 0)
+}
+
+@Test
+func platformCheckBaijiahaoTest(): Unit {
+    // 全外链图（localImgCount=0）在百家号必卡「请添加封面」——实测踩过
+    let iss = platformCheckIssues("baijiahao", "一个八字以上的标题", 100, 100,
+        "https://a.com/x", "", "", 2, 0)
+    var cover = false
+    for (it in iss) {
+        if (it.label == "封面") {
+            cover = true
+        }
+    }
+    @Assert(cover, true)
+    // origin_url 已给出 → 不报
+    var origin = false
+    for (it in iss) {
+        if (it.label == "origin_url") {
+            origin = true
+        }
+    }
+    @Assert(origin, false)
+    // 缺 origin_url → 报
+    let iss2 = platformCheckIssues("baijiahao", "一个八字以上的标题", 100, 100, "", "", "", 2, 1)
+    var origin2 = false
+    for (it in iss2) {
+        if (it.label == "origin_url") {
+            origin2 = true
+        }
+    }
+    @Assert(origin2, true)
+    // 标题不足 8 字符要报（接口硬要求 8-40 字符）
+    let iss3 = platformCheckIssues("baijiahao", "短标题", 100, 100, "https://a.com/x", "", "", 2, 1)
+    var tchars = false
+    for (it in iss3) {
+        if (it.label == "标题字数") {
+            tchars = true
+        }
+    }
+    @Assert(tchars, true)
+}
+
+@Test
+func rehostFailGateTest(): Unit {
+    // 没有失败就不拦（best-effort 语义不变）
+    @Assert(rehostFailGate("toutiao", 0, false), false)
+    // 有失败且没给 --force → 中止，别白烧一次发文额度
+    @Assert(rehostFailGate("toutiao", 2, false), true)
+    // --force 显式放行
+    @Assert(rehostFailGate("toutiao", 2, true), false)
+    // 负数/零一律不拦
+    @Assert(rehostFailGate("toutiao", -1, false), false)
+}
+
+@Test
+func atomgitFallbackUrlTest(): Unit {
+    // 本机 raw.gitcode.com 被 CloudWAF 拦成 418，同图 api 端点 200 → 必须能自动换算
+    @Assert(atomgitApiFallbackUrl("https://raw.gitcode.com/qq8864/images/raw/main/cjh/embed-arch.png"),
+        "https://api.gitcode.com/api/v5/repos/qq8864/images/raw/cjh/embed-arch.png?ref=main")
+    // 多级路径要整段保留
+    @Assert(atomgitApiFallbackUrl("https://raw.gitcode.com/u/r/raw/dev/a/b/c.png"),
+        "https://api.gitcode.com/api/v5/repos/u/r/raw/a/b/c.png?ref=dev")
+    // 其它域名没有备用端点，返回空串（调用方据此决定不再重试）
+    @Assert(atomgitApiFallbackUrl("https://example.com/a.png"), "")
+    @Assert(atomgitApiFallbackUrl("https://api.gitcode.com/api/v5/repos/u/r/raw/a.png?ref=main"), "")
+    // 段数不够（缺文件名）不造坏 URL
+    @Assert(atomgitApiFallbackUrl("https://raw.gitcode.com/qq8864/images/raw/main"), "")
+    // 段数够但第 6 段不是 raw（不是 raw 直链形状）也不换算
+    @Assert(atomgitApiFallbackUrl("https://raw.gitcode.com/u/r/blob/main/x.png"), "")
+}

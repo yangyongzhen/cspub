@@ -437,12 +437,13 @@ func joinIds(ids: Array<Int64>): String {
     return out
 }
 
-/** 发一次 RPC，返回 (HTTP 状态, 响应体) */
-func tencentRpcCall(cookie: String, uin: String, action: String, payload: String,
+/** 通用 RPC 发送（任意 namespace 都能用）：鉴权只要 Cookie，但 UA/Origin/Referer 缺一个
+ * 就会吃到反爬挑战页（裸 curl 实测），所以四个头固定带齐。 */
+func tencentRpcPost(cookie: String, url: String, action: String, payload: String,
     insecure: Bool): (Int64, String) {
     let body = buildTencentRpcBody(action, payload)
     let builder = HttpRequestBuilder()
-        .url(tencentRpcUrl(action, uin))
+        .url(url)
         .post()
         .header("Content-Type", "application/json")
         .body(body)
@@ -456,6 +457,12 @@ func tencentRpcCall(cookie: String, uin: String, action: String, payload: String
     let r = execRequest(req, insecure)
     dbg("tencent ${action} HTTP ${r.status}：${r.text}")
     return (r.status, r.text)
+}
+
+/** 发一次 RPC，返回 (HTTP 状态, 响应体) */
+func tencentRpcCall(cookie: String, uin: String, action: String, payload: String,
+    insecure: Bool): (Int64, String) {
+    return tencentRpcPost(cookie, tencentRpcUrl(action, uin), action, payload, insecure)
 }
 
 /** 图片 RPC 的 namespace 是 `image`，发文是 `column/article`——两者不能混用（混用回 501）。 */
@@ -546,7 +553,16 @@ public func rehostTencentImages(md: String, cookie: String, uin: String,
         if (src.contains("qcloudimg.com") || src.contains("cloud.tencent.com")) {
             continue
         }
-        let url = saveTencentHttpImage(src, cookie, uin, insecure)
+        // 注意：这里是**腾讯云服务端**去抓这个 URL（SaveHttpImageCommon 只收 url），
+        // 不走本机 downloadImage——所以 raw.gitcode.com 的 WAF 问题必须在这里换掉：
+        // 实测 raw 端点本机 418、腾讯云侧同样取不到，换成 api.gitcode.com 等价端点才拿得到图。
+        let fb = atomgitApiFallbackUrl(src)
+        let fetchUrl = if (fb.size > 0) {
+            fb
+        } else {
+            src
+        }
+        let url = saveTencentHttpImage(fetchUrl, cookie, uin, insecure)
         if (url.size == 0) {
             fail++
             println("⚠ 腾讯云图床转存失败，保留原链接：${src}")
@@ -702,4 +718,215 @@ public func buildTencentPublishPayload(title: String, contentEnc: String, plainE
     }
     o.put("keywords", kws)
     return o.toJsonString()
+}
+
+/** 专栏/标签 RPC 的 namespace 是 `column/column`（发文是 column/article、图片是 image）：
+ * 挂错 namespace 直接 501——实测 FetchJoinedColumnList / FetchColumnTags 必须走这个。 */
+public func tencentColumnRpcUrl(action: String, uin: String): String {
+    let base = TENCENT_SITE + "/developer/services/ajax/column/column"
+    if (uin.size == 0) {
+        return "${base}?action=${action}"
+    }
+    return "${base}?action=${action}&uin=${uin}"
+}
+
+/** 从 RPC 响应里取业务码（纯函数）：签名响应里的 code 是 **JSON 数字**，
+ * 用只认字符串的 jsonStr 会取到空串，一律走 jsonScalar 按 Kind 取。 */
+public func tencentRespCode(text: String): String {
+    let root = try {
+        JsonValue.fromStr(text)
+    } catch (e: Exception) {
+        return ""
+    }
+    match (root.kind()) {
+        case JsonKind.JsObject => return jsonScalar(root, "code")
+        case _ => return ""
+    }
+}
+
+/** 是否是 JSON 对象（避免对枚举直接用 !=，本机 1.2.0 上枚举比较写法各异） */
+func jsonIsObject(v: JsonValue): Bool {
+    match (v.kind()) {
+        case JsonKind.JsObject => return true
+        case _ => return false
+    }
+}
+
+/** 取响应里的条目数组（纯函数，单测覆盖）：data 可能是数组本身，也可能包一层
+ * {list|items|columns|tags|result|records:[...]}；顶层直接带数组的也认。 */
+public func tencentItemArray(text: String): Array<JsonValue> {
+    let out = ArrayList<JsonValue>()
+    let root = try {
+        JsonValue.fromStr(text)
+    } catch (e: Exception) {
+        return out.toArray()
+    }
+    var node = root
+    match (root.kind()) {
+        case JsonKind.JsObject =>
+            match (root.asObject().get("data")) {
+                case Some(d) => node = d
+                case None => ()
+            }
+        case _ => ()
+    }
+    tencentCollectItems(node, out)
+    return out.toArray()
+}
+
+/** 递归收一层容器里的条目：数组全收；对象则找常见键再下一层 */
+func tencentCollectItems(node: JsonValue, out: ArrayList<JsonValue>): Unit {
+    match (node.kind()) {
+        case JsonKind.JsArray =>
+            let arr = node.asArray()
+            var i: Int64 = 0
+            while (i < arr.size()) {
+                match (arr.get(i)) {
+                    case Some(item) => out.add(item)
+                    case None => ()
+                }
+                i++
+            }
+        case JsonKind.JsObject =>
+            let obj = node.asObject()
+            for (k in ["list", "items", "columns", "tags", "tagList", "result", "records"]) {
+                match (obj.get(k)) {
+                    case Some(v) =>
+                        match (v.kind()) {
+                            case JsonKind.JsArray => tencentCollectItems(v, out)
+                            case _ => ()
+                        }
+                    case None => ()
+                }
+            }
+        case _ => ()
+    }
+}
+
+/** 按候选键顺序取第一个非空标量（不同 RPC 版本字段名不一致） */
+func tencentFirstScalar(obj: JsonValue, keys: Array<String>): String {
+    for (k in keys) {
+        let v = jsonScalar(obj, k)
+        if (v.size > 0) {
+            return v
+        }
+    }
+    return ""
+}
+
+/** 解析专栏列表 → (id, 名称)。纯函数，单测覆盖。 */
+public func parseTencentColumns(text: String): Array<(String, String)> {
+    let out = ArrayList<(String, String)>()
+    for (item in tencentItemArray(text)) {
+        if (!jsonIsObject(item)) {
+            continue
+        }
+        let id = tencentFirstScalar(item, ["columnId", "classifyId", "id"])
+        if (id.size == 0) {
+            continue
+        }
+        let nm = tencentFirstScalar(item, ["columnName", "name", "title", "classifyName"])
+        out.add((id, nm))
+    }
+    return out.toArray()
+}
+
+/** 解析标签列表 → (id, 名称)。纯函数，单测覆盖。 */
+public func parseTencentTags(text: String): Array<(String, String)> {
+    let out = ArrayList<(String, String)>()
+    for (item in tencentItemArray(text)) {
+        if (!jsonIsObject(item)) {
+            continue
+        }
+        let id = tencentFirstScalar(item, ["tagId", "tag_id", "id"])
+        if (id.size == 0) {
+            continue
+        }
+        let nm = tencentFirstScalar(item, ["tagName", "tag_name", "name", "title", "tag"])
+        out.add((id, nm))
+    }
+    return out.toArray()
+}
+
+/** 命令：tags —— 查本账号已加入的专栏与可用标签，直接给出可复制的环境变量。
+ * 发布前跑这个，比撞 300031（专栏未加入）/ -9993（标签空）/ 9003（columnId 缺失）再回头排查省事。 */
+public func cmdTencentTags(cookie: String, insecure: Bool): Int64 {
+    let uin = tencentUin(cookie)
+    if (uin.size == 0) {
+        println("错误：Cookie 里取不到 uin，无法确定账号")
+        println("提示：重新登录 cloud.tencent.com 后复制整串（须含 uin / skey）")
+        return 1
+    }
+    let (st, body) = tencentRpcPost(cookie, tencentColumnRpcUrl("FetchJoinedColumnList", uin),
+        "FetchJoinedColumnList", "{}", insecure)
+    let code = tencentRespCode(body)
+    if (st != 200 || code != "0") {
+        println("错误：查询已加入专栏失败（HTTP ${st}，code ${code}）")
+        println(body)
+        println("提示：501 = namespace 挂错；业务码非 0 多半是登录态失效")
+        return 1
+    }
+    let cols = parseTencentColumns(body)
+    if (cols.size == 0) {
+        println("未查到已加入的专栏——未加入专栏时发布会被拒（300031）")
+        println("原始响应：${body}")
+        return 1
+    }
+    println("账号 uin：${uin}")
+    println("已加入专栏（${cols.size} 个）：")
+    for (c in cols) {
+        println("  [${c[0]}] ${c[1]}")
+    }
+    println("")
+    // 标签挂在专栏下：逐个查会打一串请求，先探前 5 个
+    var suggested = ""
+    var idx: Int64 = 0
+    while (idx < cols.size && idx < 5) {
+        let (cid, cname) = cols[idx]
+        idx++
+        let (ts, tb) = tencentRpcPost(cookie, tencentColumnRpcUrl("FetchColumnTags", uin),
+            "FetchColumnTags", "{\"columnId\":${cid}}", insecure)
+        let tc = tencentRespCode(tb)
+        if (ts != 200 || tc != "0") {
+            println("  专栏 ${cid}（${cname}）：标签查询失败（code ${tc}）")
+            continue
+        }
+        let tags = parseTencentTags(tb)
+        println("  专栏 ${cid}（${cname}）：共 ${tags.size} 个标签")
+        let shown = if (tags.size > 12) { 12 } else { tags.size }
+        var line = ""
+        var j: Int64 = 0
+        while (j < shown) {
+            if (line.size > 0) {
+                line = line + "  "
+            }
+            line = line + "[${tags[j][0]}] ${tags[j][1]}"
+            j++
+        }
+        if (line.size > 0) {
+            println("    " + line)
+            if (tags.size > shown) {
+                println("    …（其余 ${tags.size - shown} 个省略）")
+            }
+        }
+        if (suggested.size == 0 && tags.size > 0) {
+            let n = if (tags.size > 2) { 2 } else { tags.size }
+            var s = ""
+            var k: Int64 = 0
+            while (k < n) {
+                if (s.size > 0) {
+                    s = s + ","
+                }
+                s = s + tags[k][0]
+                k++
+            }
+            suggested = "export CSPUB_TENCENT_CLASSIFY_IDS=${cid}\nexport CSPUB_TENCENT_TAG_IDS=${s}"
+        }
+    }
+    if (suggested.size > 0) {
+        println("")
+        println("建议配置（覆盖默认专栏 149，避免 300031）：")
+        println(suggested)
+    }
+    return 0
 }
