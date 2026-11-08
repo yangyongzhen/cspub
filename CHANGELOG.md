@@ -2,6 +2,48 @@
 
 cspub 版本变更记录。版本号规则沿用 cjh：重大更新递增中间位，小更新递增末位；版本号单一真相在 `cjpm.toml` 的 `version` 字段。每条变更须带验证证据（实测输出、错误码、转存结果），不写没有证据的条目。
 
+## [0.3.2] - 2026-11-08
+
+按《AI 时代，我为什么推荐用 cj-tauri 开发桌面应用》十平台实战发布的复盘，修掉 3 个有实证的问题——
+两个是「本地就能看出、却要等到发布现场才发现」的误报，一个是「照预检提示做反而埋雷」的能力缺口。
+
+### 新增
+
+- **百家号 `--cover <本地图>`**（`publishToBaijiahaoCookie` / `cmdPublish` / `cmdCheck` / `platformCheckIssues`）：
+  封面与正文图解耦。此前封面来源被写死成「正文第一张本地图」，而伴生脚本
+  `scripts/baijiahao_publish.py` 只有 `--cover-file` 一个图片入口、**不上传正文里的图**——于是正文全外链就
+  没有封面（被拒），正文放本地图就有封面但那张图死链，形成死角。现在 `--cover` 单独指定封面，正文可以全用
+  公网直链；`check` 同样接受 `--cover`，给了就不再要求正文含本地图。预检里百家号的本地图告警也改成准确描述
+  （「百家号只上传封面、不上传正文图」），不再误导成「配 `CSPUB_ATOMGIT_TOKEN` 就好」。
+  证据：`check /tmp/cspub_cover_check.md --platform baijiahao` → 无 `--cover` 报「封面」1 条、`EXIT=1`；
+  加 `--cover docs/imgs/cjt-vs-tauri-rgb.png` → 「本地规则全部通过」、`EXIT=0`。
+
+### 修复
+
+- **头条图片转存 URL 未做 HTML 反转义**（新增纯函数 `htmlUnescape`，`rehostToutiaoImages` 接入）：
+  `rehostToutiaoImages` 处理的是 `mdToHtml` 渲染后的 HTML，URL 里的 `&` 已被转义成 `&amp;`，而
+  `collectImgSrcs` 直接取 `src` 原文去下载，签名参数名变成 `amp;policy` → 服务端按无效签名拒绝。
+  实战里一篇 5 图文章 5 张全部打印「⚠ 读不到图片（头条会拒稿 7115）」，但链接浏览器打开正常。
+  现在下载与取扩展名都走反转义后的 URL，`map` 的 key 仍保留 HTML 原文串（`rewriteHtmlImgs` 要按原 `src` 匹配回写）。
+  `htmlUnescape` 只反转义一层（`&amp;amp;` → `&amp;`）、未知实体（`&nbsp;`）原样保留、分段 append 整段 UTF-8 不拆汉字。
+- **头条 1050 失败时给出真实排查方向**（`uploadToutiaoImage`）：1050 除瞬时抖动外还有**确定性**成因——
+  图片编码格式。实测 rsvg 导出的 8-bit RGBA（带 alpha）与 16-bit/color PNG 稳定被拒，转 8-bit RGB（PNG24）
+  后一次通过；此前重试耗尽只打印「上传最终失败」，容易误判成限流。现在直接打印编码成因与
+  `convert in.png -alpha off -depth 8 -type TrueColor PNG24:out.png` 的转码命令。
+
+### 文档
+
+- `docs/开发文档与踩坑记录.md`：新增 §27（`&amp;` 导致头条转存误报）、§28（百家号封面与正文图互相绑架），
+  并给 §24（头条 1050）补上「确定性成因 = 图片编码」的实测数据与改判方法。
+
+### 构建
+
+- `cjpm build` 零警告（`grep -c 'warning:'` → `0`）；`cjpm test` → `TOTAL: 95 / PASSED: 95 / FAILED: 0`
+  （新增 4 个 `htmlUnescape` 用例、1 个 `--cover` 豁免封面用例；`platformCheckIssues` 多一个 `coverGiven` 参数，
+  既有 9 处调用同步更新）。
+- 本版**未重跑真机发文**：头条当日额度已用、CSDN 当日发文限额已触顶（`400300012`），
+  端到端验证以 `check` 预检 + 单测为准；图文发布链路的真机凭证见 0.3.1 与本次实战记录。
+
 ## [0.3.1] - 2026-11-07
 
 按「十平台发文实战复盘」的 13 项问题清单修掉前四项：把「发一次错一次」的失败提前到本地，把注定失败的提交挡在发文额度之外。

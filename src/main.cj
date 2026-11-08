@@ -124,7 +124,7 @@ main(args: Array<String>): Int64 {
 
 func usage(): Unit {
     // 版本号唯一真相在 cjpm.toml 的 version，此处仅回显，改动时须同步
-    println("cspub v0.3.1 — 多平台自动发文 CLI（仓颉实现）：csdn / zhihu / baijiahao / cnblogs / juejin / oschina / tencent / yuque / toutiao / segmentfault")
+    println("cspub v0.3.2 — 多平台自动发文 CLI（仓颉实现）：csdn / zhihu / baijiahao / cnblogs / juejin / oschina / tencent / yuque / toutiao / segmentfault")
     println("")
     println("用法:")
     println("  cspub check   <文章.md> [--platform p]  解析 front-matter + 渲染统计；带 --platform 时按该平台规则预检（不联网）")
@@ -525,13 +525,18 @@ func cmdWhoami(args: Array<String>): Int64 {
 func cmdCheck(args: Array<String>): Int64 {
     let path = args[1]
     var platform = ""
+    var coverGiven = false
     var i: Int64 = 2
     while (i < args.size) {
         if (args[i] == "--platform" && i + 1 < args.size) {
             platform = args[i + 1]
             i++
+        } else if (args[i] == "--cover" && i + 1 < args.size) {
+            // 只判「给没给」：预检不读文件。给了 --cover 就等于封面与正文图解耦
+            coverGiven = trimAscii(args[i + 1]).size > 0
+            i++
         } else {
-            println("未知参数：${args[i]}（check 只认 --platform）")
+            println("未知参数：${args[i]}（check 只认 --platform / --cover）")
             return 1
         }
         i++
@@ -563,7 +568,7 @@ func cmdCheck(args: Array<String>): Int64 {
         utf8CharCount(plain), a.originUrl,
         loadConfigString("CSPUB_TENCENT_TAG_IDS", "tencentTagIds"),
         loadConfigString("CSPUB_TENCENT_CLASSIFY_IDS", "tencentClassifyIds"),
-        Int64(collectImgSrcs(html).size), localImageCount(a.body))
+        Int64(collectImgSrcs(html).size), localImageCount(a.body), coverGiven)
     printPlatformIssues(platform, issues)
     if (platformCheckFailed(issues)) {
         return 1
@@ -580,6 +585,7 @@ func cmdPublish(args: Array<String>, startIdx: Int64): Int64 {
     var insecure = false
     var force = false
     var platform = "csdn"
+    var coverPath = ""
     var i = startIdx
     while (i < args.size) {
         if (args[i] == "--draft") {
@@ -595,6 +601,10 @@ func cmdPublish(args: Array<String>, startIdx: Int64): Int64 {
             i++
         } else if (args[i] == "--update" && i + 1 < args.size) {
             updateId = args[i + 1]
+            i++
+        } else if (args[i] == "--cover" && i + 1 < args.size) {
+            // 百家号专用：封面与正文图解耦，正文图可以全用外链（当前只有 Cookie 浏览器通道吃这个）
+            coverPath = args[i + 1]
             i++
         } else {
             println("未知参数：${args[i]}")
@@ -630,13 +640,16 @@ func cmdPublish(args: Array<String>, startIdx: Int64): Int64 {
         if (appId.size > 0 && token.size > 0) {
             // 通道一：官方开发者接口（后台「开发」菜单的 app_id/app_token）
             println("发布到百家号（${mode}，官方 token 通道）…")
+            if (coverPath.size > 0) {
+                println("提示：--cover 目前只支持 Cookie 浏览器通道；token 通道的封面走 cover_images（取正文首图 URL）")
+            }
             return publishToBaijiahao(appId, token, a, publishNow, insecure)
         }
         // 通道二：Cookie + 浏览器自动化伴生脚本（开发者入口为定向邀请制时的替代）
         let bjhCookie = loadConfigString("CSPUB_BAIJIAHAO_COOKIE", "baijiahaoCookie")
         if (bjhCookie.size > 0) {
             println("发布到百家号（${mode}，Cookie 浏览器通道）…")
-            return publishToBaijiahaoCookie(bjhCookie, a, publishNow)
+            return publishToBaijiahaoCookie(bjhCookie, a, publishNow, coverPath)
         }
         println("错误：没有找到百家号凭证（两选一）：")
         println("  ① 官方开发者接口（若账号有「开发」入口）：CSPUB_BAIJIAHAO_APP_ID + CSPUB_BAIJIAHAO_APP_TOKEN")

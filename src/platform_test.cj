@@ -521,24 +521,24 @@ func companionScriptPathTest(): Unit {
 @Test
 func platformCheckToutiaoTest(): Unit {
     // 头条 5~30 字：4 字不符（编辑器存不进的硬区间）
-    let bad = platformCheckIssues("toutiao", "短标题", 100, 100, "", "", "", 0, 0)
+    let bad = platformCheckIssues("toutiao", "短标题", 100, 100, "", "", "", 0, 0, false)
     @Assert(bad.size, 1)
     @Assert(bad[0].label, "标题字数")
     // 合规标题 + 无图 → 本地规则全过
-    @Assert(platformCheckIssues("toutiao", "一个六字标题名", 100, 100, "", "", "", 0, 0).size, 0)
+    @Assert(platformCheckIssues("toutiao", "一个六字标题名", 100, 100, "", "", "", 0, 0, false).size, 0)
     // 有图就提示「必须全部进头条 CDN」
-    let withImg = platformCheckIssues("toutiao", "一个六字标题名", 100, 100, "", "", "", 3, 0)
+    let withImg = platformCheckIssues("toutiao", "一个六字标题名", 100, 100, "", "", "", 3, 0, false)
     @Assert(withImg.size, 1)
     @Assert(withImg[0].label, "图片域名")
     // 超 30 字同样报（44 字标题实测就是这么被拦下的）
     @Assert(platformCheckIssues("toutiao", "一个字一个字一个字一个字一个字一个字一个字一个字一个字一个字一个字",
-        100, 100, "", "", "", 0, 0).size, 1)
+        100, 100, "", "", "", 0, 0, false).size, 1)
 }
 
 @Test
 func platformCheckTencentTest(): Unit {
     // 正文不足 140 字 + 标签空 + 未配专栏（回落默认 149）→ 三条
-    let iss = platformCheckIssues("tencent", "标题", 50, 50, "", "", "", 0, 0)
+    let iss = platformCheckIssues("tencent", "标题", 50, 50, "", "", "", 0, 0, false)
     @Assert(iss.size, 3)
     var sawTag = false
     var sawChars = false
@@ -558,14 +558,14 @@ func platformCheckTencentTest(): Unit {
     @Assert(sawChars, true)
     @Assert(sawColumn, true)
     // 配了标签、正文够长、专栏非默认 → 通过
-    @Assert(platformCheckIssues("tencent", "标题", 200, 200, "", "10663,10308", "88542", 0, 0).size, 0)
+    @Assert(platformCheckIssues("tencent", "标题", 200, 200, "", "10663,10308", "88542", 0, 0, false).size, 0)
 }
 
 @Test
 func platformCheckBaijiahaoTest(): Unit {
     // 全外链图（localImgCount=0）在百家号必卡「请添加封面」——实测踩过
     let iss = platformCheckIssues("baijiahao", "一个八字以上的标题", 100, 100,
-        "https://a.com/x", "", "", 2, 0)
+        "https://a.com/x", "", "", 2, 0, false)
     var cover = false
     for (it in iss) {
         if (it.label == "封面") {
@@ -573,6 +573,10 @@ func platformCheckBaijiahaoTest(): Unit {
         }
     }
     @Assert(cover, true)
+    // 但显式给了 --cover 就够了：封面与正文图解耦，正文可以全用外链（这条是本轮实战暴露的）
+    let withCover = platformCheckIssues("baijiahao", "一个八字以上的标题", 100, 100,
+        "https://a.com/x", "", "", 2, 0, true)
+    @Assert(withCover.size, 0)
     // origin_url 已给出 → 不报
     var origin = false
     for (it in iss) {
@@ -582,7 +586,7 @@ func platformCheckBaijiahaoTest(): Unit {
     }
     @Assert(origin, false)
     // 缺 origin_url → 报
-    let iss2 = platformCheckIssues("baijiahao", "一个八字以上的标题", 100, 100, "", "", "", 2, 1)
+    let iss2 = platformCheckIssues("baijiahao", "一个八字以上的标题", 100, 100, "", "", "", 2, 1, false)
     var origin2 = false
     for (it in iss2) {
         if (it.label == "origin_url") {
@@ -591,7 +595,7 @@ func platformCheckBaijiahaoTest(): Unit {
     }
     @Assert(origin2, true)
     // 标题不足 8 字符要报（接口硬要求 8-40 字符）
-    let iss3 = platformCheckIssues("baijiahao", "短标题", 100, 100, "https://a.com/x", "", "", 2, 1)
+    let iss3 = platformCheckIssues("baijiahao", "短标题", 100, 100, "https://a.com/x", "", "", 2, 1, false)
     var tchars = false
     for (it in iss3) {
         if (it.label == "标题字数") {

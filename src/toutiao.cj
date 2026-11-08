@@ -298,6 +298,14 @@ public func uploadToutiaoImage(cookie: String, csrf: String, data: Array<Byte>, 
             if (attempt > 1) {
                 println("  ⚠ 头条图床上传最终失败（code ${code}，已试 ${attempt} 次）")
             }
+            if (trimAscii(code) == "1050") {
+                // 2026-11-08 真机定因：1050 除了「瞬时抖动」，还有**确定性**的成因——图片编码格式。
+                // rsvg 导出的 8-bit RGBA（带 alpha）与 16-bit/color PNG 稳定被拒，转成 8-bit RGB
+                // （PNG24）后一次通过；只按「重传」处理会白等到 3 次用完还报同一个码。
+                println("  提示：1050 除瞬时抖动外，也可能是图片编码被拒（RGBA 透明通道 / 16-bit 色深）；")
+                println("        rsvg/ImageMagick 导出的图先转 8-bit RGB 再传：")
+                println("        convert in.png -alpha off -depth 8 -type TrueColor PNG24:out.png")
+            }
             return ("", "")
         }
         println("  头条图床上传瞬时失败（code ${code}），${attempt} 秒后重试…")
@@ -401,16 +409,20 @@ public func rehostToutiaoImages(cookie: String, csrf: String, html: String,
             continue
         }
         var data: Array<Byte> = Array<Byte>(0, repeat: 0)
-        if (u.startsWith("http://") || u.startsWith("https://")) {
+        // src 取的是渲染后 HTML 原文，URL 里的 & 已变成 &amp;：照原文下载必然失败
+        // （头条自家 CDN 的签名链 ?a=1&b=2 首当其冲）。map 的 key 仍用原串 u，
+        // 因为 rewriteHtmlImgs 要拿 HTML 原文里的 src 去匹配回写。
+        let fetchUrl = htmlUnescape(u)
+        if (fetchUrl.startsWith("http://") || fetchUrl.startsWith("https://")) {
             data = try {
-                downloadImage(u)
+                downloadImage(fetchUrl)
             } catch (e: Exception) {
                 let _ = e
                 Array<Byte>(0, repeat: 0)
             }
         } else {
             data = try {
-                readImageBytes(u)
+                readImageBytes(fetchUrl)
             } catch (e: Exception) {
                 let _ = e
                 Array<Byte>(0, repeat: 0)
@@ -421,7 +433,7 @@ public func rehostToutiaoImages(cookie: String, csrf: String, html: String,
             println("⚠ 读不到图片（头条会拒稿 7115）：${u}")
             continue
         }
-        let (uri, pubUrl) = uploadToutiaoImage(cookie, csrf, data, extOf(u), insecure)
+        let (uri, pubUrl) = uploadToutiaoImage(cookie, csrf, data, extOf(fetchUrl), insecure)
         if (uri.size == 0) {
             fail++
             println("⚠ 转存头条 CDN 失败，保留原链接（头条会拒稿 7115）：${u}")

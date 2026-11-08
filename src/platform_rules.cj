@@ -41,10 +41,11 @@ public func platformDisplayName(platform: String): String {
 
 /** 按平台规则算问题清单（纯函数，单测覆盖）。
  * 空数组＝本地预检通过（不代表服务端一定收，登录态/图床要联网才知道）。
- * `imgCount` 是正文图片总数，`localImgCount` 是其中未转存的本地图数量。 */
+ * `imgCount` 是正文图片总数，`localImgCount` 是其中未转存的本地图数量，
+ * `coverGiven` 是 `--cover` 是否显式指定了封面文件（百家号专用：封面可与正文图解耦）。 */
 public func platformCheckIssues(platform: String, title: String, bodyChars: Int64,
     plainChars: Int64, originUrl: String, tagCfg: String, classifyCfg: String,
-    imgCount: Int64, localImgCount: Int64): Array<PlatformIssue> {
+    imgCount: Int64, localImgCount: Int64, coverGiven: Bool): Array<PlatformIssue> {
     let out = ArrayList<PlatformIssue>()
     let name = platformDisplayName(platform)
     let tchars = utf8CharCount(trimAscii(title))
@@ -71,9 +72,9 @@ public func platformCheckIssues(platform: String, title: String, bodyChars: Int6
         if (trimAscii(originUrl).size == 0 && tchars > 0) {
             out.add(PlatformIssue("origin_url", "百家号 origin_url 必填：front-matter 加 origin_url: <原文地址>"))
         }
-        if (localImgCount == 0) {
+        if (localImgCount == 0 && !coverGiven) {
             out.add(PlatformIssue("封面",
-                "百家号发布模式必须有封面；只有正文含**本地图片路径**时才会自动上传作封面（纯外链图不触发）"))
+                "百家号发布模式必须有封面：用 --cover <本地图> 显式指定，或让正文含一张本地图片（浏览器通道取正文首张本地图当封面）"))
         }
     }
     if (platform == "tencent") {
@@ -92,8 +93,15 @@ public func platformCheckIssues(platform: String, title: String, bodyChars: Int6
         }
     }
     if (localImgCount > 0 && platform != "toutiao") {
-        out.add(PlatformIssue("本地图",
-            "正文还有 ${localImgCount} 张本地图片：CSPUB_ATOMGIT_TOKEN 未配或未转存时会成死链"))
+        if (platform == "baijiahao") {
+            // 百家号与别家相反：正文本地图**不会**被上传（浏览器脚本只上传封面），
+            // 留在正文里就是死链——所以这里说的是「改外链」，不是「配 AtomGit token」
+            out.add(PlatformIssue("本地图",
+                "正文还有 ${localImgCount} 张本地图片：百家号只上传封面、不上传正文图，正文里这些会成死链；改成公网直链，封面用 --cover 单独指定"))
+        } else {
+            out.add(PlatformIssue("本地图",
+                "正文还有 ${localImgCount} 张本地图片：CSPUB_ATOMGIT_TOKEN 未配或未转存时会成死链"))
+        }
     }
     return out.toArray()
 }

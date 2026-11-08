@@ -15,7 +15,7 @@ CSDN · 知乎 · 掘金 · 开源中国 · 博客园 · 百家号 · 腾讯云�
 
 > 国内 AtomGit 托管：[atomgit.com/qq8864/cspub](https://atomgit.com/qq8864/cspub)，与 GitHub 镜像同步更新（同一提交双端推送，ref 一致）。
 
-[![Version](https://img.shields.io/badge/version-0.3.1-blue)](https://github.com/yangyongzhen/cspub/releases)
+[![Version](https://img.shields.io/badge/version-0.3.2-blue)](https://github.com/yangyongzhen/cspub/releases)
 [![Platforms](https://img.shields.io/badge/%E5%B9%B3%E5%8F%B0-10%20%E5%AE%B6-brightgreen)](#支持的平台)
 [![Language](https://img.shields.io/badge/%E8%AF%AD%E8%A8%80-%E4%BB%93%E9%A2%89%201.2.0-ff69b4)](https://cangjie-lang.cn)
 [![License](https://img.shields.io/badge/%E8%AE%B8%E5%8F%AF%E8%AF%81-MIT-green)](./LICENSE)
@@ -305,8 +305,8 @@ draft: true                # 缺省 true；publish 时 --live 可覆盖
   `git push origin main && git push github main`。注意本机 git 配置了
   `url.https://ghfast.top/https://github.com/.insteadof https://github.com/`，推 GitHub 实际走镜像加速，
   `git remote -v` 里显示的也是加速地址，属正常。
-- **发布流程**：`cjpm build` → 产物入 `dist/`（`cspub-v<版本>-linux-x64[.tar.gz]`，Windows 侧 `-windows-x64.exe` / `-selfcontained.zip`）→ `SHA256SUMS` 逐项 `sha256sum -c` 通过 → 打 tag（`v0.3.1` 格式）→ 基于 tag 发 release 并附产物。详见 [`docs/发布与版本维护.md`](./docs/发布与版本维护.md)。
-- **当前版本**：`0.3.1`——十平台通道 + 平台预检（`check --platform`）、转存失败门禁（`--force`）、头条图片重传、AtomGit 备用下载端点。产物见 [`dist/`](./dist) 与 [Releases](https://github.com/yangyongzhen/cspub/releases)。
+- **发布流程**：`cjpm build` → 产物入 `dist/`（`cspub-v<版本>-linux-x64[.tar.gz]`，Windows 侧 `-windows-x64.exe` / `-selfcontained.zip`）→ `SHA256SUMS` 逐项 `sha256sum -c` 通过 → 打 tag（`v0.3.2` 格式）→ 基于 tag 发 release 并附产物。详见 [`docs/发布与版本维护.md`](./docs/发布与版本维护.md)。
+- **当前版本**：`0.3.2`——在 0.3.1（十平台通道 + 平台预检 + 转存失败门禁 + 头条图片重传 + AtomGit 备用下载端点）之上，修掉头条转存 URL 未做 HTML 反转义（`&amp;` 导致「读不到图片」误报）、头条 1050 补编码格式排查提示、新增百家号 `--cover` 让封面与正文图解耦。`dist/` 内仍是 0.3.1 产物，需按发布流程重新打包。见 [`dist/`](./dist) 与 [Releases](https://github.com/yangyongzhen/cspub/releases)。
 - **开发规范**：见 [AGENTS.md](./AGENTS.md)——变更交付门禁、代码组织原则、踩坑沉淀与文档规范。
 
 ## 已知限制

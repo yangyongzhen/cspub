@@ -96,7 +96,8 @@ public func parseBjhResp(respText: String): (Int64, String, String) {
  * 纯 HTTP 直调必 500，社区可用实现全走浏览器自动化——故 Cookie 通道经 Playwright 伴生
  * 脚本发文（scripts/baijiahao_publish.py，宿主机需 python3 + playwright + chromium）。
  * 凭证经临时文件传递（用完即删），避免经 argv/ps 泄露。 */
-public func publishToBaijiahaoCookie(cookie: String, a: Article, publishNow: Bool): Int64 {
+public func publishToBaijiahaoCookie(cookie: String, a: Article, publishNow: Bool,
+    coverPath: String): Int64 {
     // 伴生脚本就位检查：CSPUB_SCRIPT_DIR → 当前目录 → 可执行文件目录向上回溯（util.cj 统一实现）
     let scriptPath = resolveCompanionScript("scripts/baijiahao_publish.py")
     if (scriptPath.size == 0) {
@@ -113,9 +114,11 @@ public func publishToBaijiahaoCookie(cookie: String, a: Article, publishNow: Boo
         writeFileTmp(tmpCookie, cookie)
         let mode = if (publishNow) { "publish" } else { "draft" }
         println("百家号：调起浏览器自动化（${mode}）…")
-        // 发布模式官方要求必选封面：取正文第一张本地图作封面（无则脚本端继续尝试并如实报告）
-        var coverFile = ""
-        if (publishNow) {
+        // 发布模式官方要求必选封面。优先用 --cover 显式指定：这样正文图可以全用外链，
+        // 不必为了「有个封面」在正文塞一张本地图——而那张本地图并不会被上传（脚本只传封面），
+        // 留在正文里就是死链。没给 --cover 才回落到正文第一张本地图。
+        var coverFile = trimAscii(coverPath)
+        if (coverFile.size == 0 && publishNow) {
             let imgs = findExternalImages(a.body)
             var i = 0
             while (i < imgs.size) {

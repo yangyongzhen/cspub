@@ -101,6 +101,87 @@ public func cookieValue(cookie: String, name: String): String {
     return ""
 }
 
+/** 字节序列 b[at..] 是否以 pat 开头（实体匹配用，纯 ASCII 比较） */
+func bytesStartsWithAt(b: Array<Byte>, at: Int64, pat: String): Bool {
+    let p = pat.toArray()
+    let n = Int64(b.size)
+    let m = Int64(p.size)
+    if (at + m > n) {
+        return false
+    }
+    var j: Int64 = 0
+    while (j < m) {
+        if (b[at + j] != p[j]) {
+            return false
+        }
+        j++
+    }
+    return true
+}
+
+/** HTML 实体反转义：&amp; &lt; &gt; &quot; &#39; &apos;。
+ * mdToHtml 渲染后 URL 里的 & 会变成 &amp;，拿这份 HTML 原文的 src 去下载必然失败
+ * （头条自家 CDN 的签名链接 `?a=1&b=2` 首当其冲，实测 5 张全部「读不到图片」误报）。
+ * 分段 append 整段 UTF-8，不逐字节拼接（AGENTS §4：逐字节会把汉字拆成非法序列）。 */
+public func htmlUnescape(s: String): String {
+    let b = s.toArray()
+    let n = Int64(b.size)
+    var amp: Int64 = 0
+    while (amp < n) {
+        if (b[amp] == UInt8(38)) {
+            break
+        }
+        amp++
+    }
+    if (amp >= n) {
+        return s
+    }
+    let sb = StringBuilder()
+    var i: Int64 = 0
+    var last: Int64 = 0
+    while (i < n) {
+        if (b[i] != UInt8(38)) {
+            i++
+            continue
+        }
+        var span: Int64 = 0
+        var rep = ""
+        if (bytesStartsWithAt(b, i, "&amp;")) {
+            span = 5
+            rep = "&"
+        } else if (bytesStartsWithAt(b, i, "&lt;")) {
+            span = 4
+            rep = "<"
+        } else if (bytesStartsWithAt(b, i, "&gt;")) {
+            span = 4
+            rep = ">"
+        } else if (bytesStartsWithAt(b, i, "&quot;")) {
+            span = 6
+            rep = "\""
+        } else if (bytesStartsWithAt(b, i, "&#39;")) {
+            span = 5
+            rep = "'"
+        } else if (bytesStartsWithAt(b, i, "&apos;")) {
+            span = 6
+            rep = "'"
+        }
+        if (span == 0) {
+            i++
+            continue
+        }
+        if (i > last) {
+            sb.append(String.fromUtf8(b[last..i]))
+        }
+        sb.append(rep)
+        i = i + span
+        last = i
+    }
+    if (last < n) {
+        sb.append(String.fromUtf8(b[last..n]))
+    }
+    return sb.toString()
+}
+
 /** 随机 n 字节的 hex 串（x-ca-nonce 用；v4 UUID 形状，不需要真时间戳） */
 public func randomHex(nBytes: Int64): String {
     let r = Random()
