@@ -34,6 +34,9 @@ main(args: Array<String>): Int64 {
         usage()
         return 0
     }
+    if (cmd == "delete") {
+        return cmdDelete(args)
+    }
     if (cmd == "tags") {
         return cmdTags(args)
     }
@@ -134,6 +137,8 @@ func usage(): Unit {
     println("                      [--force]      图片转存部分失败时仍提交（默认中止，避免白烧发文额度）")
     println("                      [--platform p] csdn（默认）/ zhihu / baijiahao / cnblogs / juejin / oschina / tencent / yuque / toutiao / segmentfault")
     println("  cspub tags --platform tencent      查本账号已加入的专栏与可用标签（发腾讯云前先跑这个）")
+    println("  cspub delete --id <id> [--platform oschina] [--insecure]")
+    println("                                     删除已发布文章（目前只有 oschina 有实测接口，其它平台不实现猜测端点）")
     println("  cspub whoami [platform]            校验平台凭证配置（不发网络请求）")
     println("  cspub help                         本帮助")
     println("")
@@ -253,6 +258,48 @@ func cmdTags(args: Array<String>): Int64 {
         return 1
     }
     return cmdTencentTags(cookie, insecure)
+}
+
+/** 删除已发布文章。目前只实现 oschina：它的 /blog/delete 实测可用（表单参数 id）；
+ * 其它平台没有验证过的删除接口，按项目原则不猜端点。 */
+func cmdDelete(args: Array<String>): Int64 {
+    var platform = "oschina"
+    var blogId = ""
+    var insecure = false
+    var i: Int64 = 1
+    while (i < args.size) {
+        if (args[i] == "--platform" && i + 1 < args.size) {
+            platform = args[i + 1]
+            i++
+        } else if (args[i] == "--id" && i + 1 < args.size) {
+            blogId = trimAscii(args[i + 1])
+            i++
+        } else if (args[i] == "--insecure") {
+            insecure = true
+        } else {
+            println("未知参数：${args[i]}（delete 只认 --platform / --id / --insecure）")
+            return 1
+        }
+        i++
+    }
+    if (platform != "oschina") {
+        println("delete 目前只支持 oschina：其它平台没有验证过的删除接口（不实现猜测端点）")
+        return 1
+    }
+    if (blogId.size == 0) {
+        println("错误：delete 需要 --id <博客 id>（publish 成功时回显的那个 id）")
+        println("  示例：cspub delete --id 19788502")
+        return 1
+    }
+    let (cookie, _, _, _) = loadOschinaCreds()
+    if (cookie.size == 0) {
+        return 1
+    }
+    if (!oschinaCookieHasSession(cookie)) {
+        println("错误：Cookie 里没有 oscid，不是登录态整串，删除会被 403 挡下")
+        return 1
+    }
+    return deleteOschinaBlog(cookie, blogId, insecure)
 }
 
 /** 载入语雀凭证：Token + namespace + 可选公开性。两者都是必填，缺哪个就点名哪个。 */

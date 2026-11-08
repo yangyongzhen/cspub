@@ -76,6 +76,14 @@ public func buildOschinaPublishBody(title: String, content: String, userId: Stri
     return o.toJsonString()
 }
 
+/** 删除请求体（纯函数）：/blog/delete 只认表单参数。
+ * 实测：JSON 体 {"id":…} 会被服务端直接忽略，回「博客不存在」（code 500，极像 id 写错），
+ * 必须用 application/x-www-form-urlencoded 提交 id=… 才生效。 */
+public func buildOschinaDeleteForm(blogId: String): String {
+    let id = trimAscii(blogId)
+    return "id=${id}"
+}
+
 /** 解析 apiv1 统一响应：返回 (code, message, id)。
  * result 可能是对象（草稿：result.id）也可能是标量（发布：result 就是博客 id）。 */
 public func parseOschinaResp(text: String): (Int64, String, String) {
@@ -348,6 +356,54 @@ public func submitOschina(cookie: String, userId: String, title: String, body: S
         println("开源中国：草稿已保存，id ${id}")
         println("草稿箱：${OSCHINA_SITE}/blog/drafts")
     }
+    return 0
+}
+
+/** 删除已发布博客：POST /blog/delete，表单参数 id。
+ * 成功回 {"success":true,"code":200}；文章不存在回 code 500「博客不存在」——与 id 写错同码，
+ * 不要误判成鉴权失败（鉴权失败是 403 且 body 为 HTML）。
+ * 删除后 /blog/{id} 仍是 HTTP 200（SPA 对任意 id 都回同一个外壳），
+ * 要确认真的删掉只能靠浏览器渲染或再看一次博客列表。 */
+public func deleteOschinaBlog(cookie: String, blogId: String, insecure: Bool): Int64 {
+    let id = trimAscii(blogId)
+    if (id.size == 0) {
+        println("错误：缺少要删除的博客 id")
+        return 1
+    }
+    let builder = HttpRequestBuilder()
+        .url(OSCHINA_API + "/blog/delete")
+        .post()
+        .header("Content-Type", "application/x-www-form-urlencoded")
+        .body(buildOschinaDeleteForm(id))
+    let req = applyHeaders(builder, [
+        StrKV("User-Agent", OSCHINA_UA),
+        StrKV("Accept", "application/json, text/plain, */*"),
+        StrKV("Referer", OSCHINA_SITE + "/"),
+        StrKV("Origin", OSCHINA_SITE),
+        StrKV("Cookie", cookie),
+    ]).build()
+    let r = execRequest(req, insecure)
+    dbg("oschina /blog/delete HTTP ${r.status}：${r.text}")
+    if (r.status != 200) {
+        println("错误：开源中国删除返回 HTTP ${r.status}")
+        println(r.text)
+        if (r.status == 403) {
+            println("提示：403 多为请求头缺 Referer/Origin 或 Cookie 失效")
+        }
+        return 1
+    }
+    let (code, msg, _) = parseOschinaResp(r.text)
+    if (code != 200) {
+        println("错误：开源中国删除失败（code ${code}）：${msg}")
+        if (msg.contains("不存在")) {
+            println("提示：id 写错、文章已被删过、或它不属于当前 Cookie 这个账号")
+        }
+        println(r.text)
+        return 1
+    }
+    println("开源中国：已删除博客 id ${id}")
+    println("复验提示：${OSCHINA_SITE}/blog/${id} 仍会回 HTTP 200（SPA 外壳对任意 id 都一样），")
+    println("  确认删除请用浏览器渲染该地址，看到「页面不存在」才算删掉")
     return 0
 }
 

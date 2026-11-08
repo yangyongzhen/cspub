@@ -17,6 +17,13 @@ cspub 版本变更记录。版本号规则沿用 cjh：重大更新递增中间�
   （「百家号只上传封面、不上传正文图」），不再误导成「配 `CSPUB_ATOMGIT_TOKEN` 就好」。
   证据：`check /tmp/cspub_cover_check.md --platform baijiahao` → 无 `--cover` 报「封面」1 条、`EXIT=1`；
   加 `--cover docs/imgs/cjt-vs-tauri-rgb.png` → 「本地规则全部通过」、`EXIT=0`。
+- **`cspub delete --platform oschina --id <id>`**（`deleteOschinaBlog` / `buildOschinaDeleteForm` / `cmdDelete`）：
+  删掉已发布或被审核拦截的文章。开源中国 `/blog/delete` 只认 `application/x-www-form-urlencoded` 的 `id=…`，
+  发 JSON 体会被服务端**静默忽略**并回「博客不存在」（`code 500`，与 id 写错同码，极易误判成鉴权问题）；
+  Cookie 须含 `oscid`，证书链问题沿用全局 `--insecure`。其它平台不实现——没有验证过的删除端点，按项目原则不猜。
+  证据：探针文 `19788508` 经 `publish --live` 发布 → `cspub delete --id 19788508` → 回显「已删除博客 id 19788508」，
+  浏览器渲染 `https://www.oschina.net/blog/19788508` 得标题「找不到您访问的页面」、正文「您访问的页面不存在」；
+  重复删 / 缺 id / 错平台 / 无凭证四条分支实测均 `EXIT=1`。
 
 ### 修复
 
@@ -35,14 +42,20 @@ cspub 版本变更记录。版本号规则沿用 cjh：重大更新递增中间�
 
 - `docs/开发文档与踩坑记录.md`：新增 §27（`&amp;` 导致头条转存误报）、§28（百家号封面与正文图互相绑架），
   并给 §24（头条 1050）补上「确定性成因 = 图片编码」的实测数据与改判方法。
+- **README 双语化 + 首屏重排**：`README.md` 改写为英文（GitHub 默认首屏不再把国际读者挡在中文外），
+  中文原版 `git mv` 成 `README.zh-CN.md`，两版顶部互加语言切换；英文版按「首屏印象」重排——
+  一句话价值主张置顶、8 个中文徽章换成英文徽章、`docs/imgs/cspub-flow.png` 提到首屏当视觉锚点、
+  Quick start 三条命令前置。证据：两版相对链接 / Markdown 图片 / 锚点逐项校验——`README.md`
+  6 个相对链接 + 1 张首屏图全 OK，`README.zh-CN.md` 6 个相对链接 + 2 张图全 OK，英文版 13 个 `##` 章节锚点齐全。
 
 ### 构建
 
-- `cjpm build` 零警告（`grep -c 'warning:'` → `0`）；`cjpm test` → `TOTAL: 95 / PASSED: 95 / FAILED: 0`
-  （新增 4 个 `htmlUnescape` 用例、1 个 `--cover` 豁免封面用例；`platformCheckIssues` 多一个 `coverGiven` 参数，
-  既有 9 处调用同步更新）。
-- 本版**未重跑真机发文**：头条当日额度已用、CSDN 当日发文限额已触顶（`400300012`），
-  端到端验证以 `check` 预检 + 单测为准；图文发布链路的真机凭证见 0.3.1 与本次实战记录。
+- `cjpm build` 零警告（`grep -c 'warning:'` → `0`）；`cjpm test` → `TOTAL: 99 / PASSED: 99 / FAILED: 0`
+  （新增 4 个 `htmlUnescape` 用例、1 个 `--cover` 豁免封面用例、4 个开源中国删除接口用例；
+  `platformCheckIssues` 多一个 `coverGiven` 参数，既有 9 处调用同步更新）。
+- 本版**未重跑真机发文主链路**：头条当日额度已用、CSDN 当日发文限额已触顶（`400300012`），
+  图文发布链路的真机凭证见 0.3.1 与本次实战记录。**新增的删除能力有真机凭证**：
+  探针文 `19788508` 发布后由 `cspub delete` 删除，浏览器渲染得「页面不存在」。
 
 ## [0.3.1] - 2026-11-07
 

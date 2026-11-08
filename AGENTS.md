@@ -50,3 +50,5 @@ cspub 是一个 CSDN 自动发文 CLI：一份 Markdown（带 front-matter），
 - 踩坑写进 `docs/开发文档与踩坑记录.md`：现象 → 排查铁证 → 修复方案 → 复用配方，四段齐全才收。
 - 流程/方案类写进 `docs/` 独立文档（如发布与版本维护），README 只留指针，不堆细节。
 - README 中的图放 `docs/imgs/`，源图（svg）与导出图（png）同仓版本化。
+- **README 双语**：`README.md` 为英文（GitHub 默认首屏）、`README.zh-CN.md` 为中文；
+  两版内容须同步，改一版必须同批改另一版，顶部保留中英切换链接。
